@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: life-os-web
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env.production
+    restart: unless-stopped
+    command: npm run start
+    environment:
+      - NODE_ENV=production
+
+  worker:
+    build: .
+    container_name: life-os-worker
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env.production
+    restart: unless-stopped
+    command: npm run worker
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - web
+
+volumes:
+  data:

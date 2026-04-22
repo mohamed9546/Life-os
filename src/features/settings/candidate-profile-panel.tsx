@@ -1,0 +1,313 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  CandidateProfileImportDraft,
+  CandidateProfileSeed,
+  normalizeCandidateProfile,
+} from "@/lib/profile/shared";
+
+interface CandidateProfileResponse {
+  profile: CandidateProfileSeed | null;
+  draft: CandidateProfileImportDraft | null;
+}
+
+export function CandidateProfilePanel() {
+  const [data, setData] = useState<CandidateProfileResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/profile/candidate");
+      const payload = (await response.json()) as CandidateProfileResponse | { error?: string };
+      if (!response.ok || !("profile" in payload)) {
+        throw new Error(("error" in payload && payload.error) || "Failed to load candidate profile");
+      }
+      setData(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load candidate profile");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const updateProfileField = <K extends keyof CandidateProfileSeed>(
+    key: K,
+    value: CandidateProfileSeed[K]
+  ) => {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            profile: normalizeCandidateProfile({
+              ...(current.profile || {}),
+              [key]: value,
+            }),
+          }
+        : current
+    );
+  };
+
+  const uploadCv = async (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+    setMessage("");
+
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach((file) => formData.append("files", file));
+
+      const response = await fetch("/api/profile/import-cv", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to import CV");
+      }
+      setMessage("CV imported into profile draft");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to import CV");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!data?.profile) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/profile/candidate", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: data.profile }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to save candidate profile");
+      }
+      setMessage("Candidate profile saved");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save candidate profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const approveDraft = async () => {
+    setSaving(true);
+    setError(null);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/profile/candidate", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approveDraft: true }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to approve profile draft");
+      }
+      setMessage("Profile draft approved");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve profile draft");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !data) {
+    return (
+      <section className="card text-center py-10">
+        <p className="text-sm text-text-secondary">Loading candidate profile...</p>
+      </section>
+    );
+  }
+
+  const profile = data?.profile || normalizeCandidateProfile({});
+  const draft = data?.draft || null;
+
+  return (
+    <section className="card space-y-5">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-text-primary">
+            Candidate profile
+          </h2>
+          <p className="text-sm text-text-secondary mt-2">
+            Upload CV PDFs into a reviewable profile draft, then approve what should drive job fit and outreach.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="btn-secondary btn-sm cursor-pointer">
+            {uploading ? "Importing..." : "Import CV PDFs"}
+            <input
+              type="file"
+              accept="application/pdf"
+              multiple
+              className="hidden"
+              onChange={(event) => void uploadCv(event.target.files)}
+            />
+          </label>
+          <button className="btn-primary btn-sm" onClick={saveProfile} disabled={saving}>
+            {saving ? "Saving..." : "Save profile"}
+          </button>
+        </div>
+      </div>
+
+      {draft && (
+        <div className="rounded-lg border border-accent/30 bg-accent-subtle px-4 py-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-xs font-semibold text-accent">Profile draft ready</p>
+              <p className="text-sm text-text-primary mt-1">
+                Imported from {draft.sourceFiles.join(", ")} with confidence{" "}
+                {Math.round(draft.confidence * 100)}%.
+              </p>
+            </div>
+            <button className="btn-primary btn-sm" onClick={approveDraft} disabled={saving}>
+              {saving ? "Approving..." : "Approve draft"}
+            </button>
+          </div>
+          {draft.issues.length > 0 && (
+            <ul className="mt-3 space-y-1 text-sm text-text-secondary">
+              {draft.issues.map((issue, index) => (
+                <li key={`${issue}-${index}`}>- {issue}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Field
+          label="Full name"
+          value={profile.fullName}
+          onChange={(value) => updateProfileField("fullName", value)}
+        />
+        <Field
+          label="Headline"
+          value={profile.headline}
+          onChange={(value) => updateProfileField("headline", value)}
+        />
+        <Field
+          label="Location"
+          value={profile.location}
+          onChange={(value) => updateProfileField("location", value)}
+        />
+        <Field
+          label="Target titles"
+          value={profile.targetTitles.join(", ")}
+          onChange={(value) =>
+            updateProfileField(
+              "targetTitles",
+              value.split(",").map((item) => item.trim()).filter(Boolean)
+            )
+          }
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <TextAreaField
+          label="Summary"
+          value={profile.summary}
+          onChange={(value) => updateProfileField("summary", value)}
+        />
+        <TextAreaField
+          label="Transition narrative"
+          value={profile.transitionNarrative}
+          onChange={(value) => updateProfileField("transitionNarrative", value)}
+        />
+        <TextAreaField
+          label="Strengths"
+          value={profile.strengths.join("\n")}
+          onChange={(value) =>
+            updateProfileField(
+              "strengths",
+              value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+            )
+          }
+        />
+        <TextAreaField
+          label="Experience highlights"
+          value={profile.experienceHighlights.join("\n")}
+          onChange={(value) =>
+            updateProfileField(
+              "experienceHighlights",
+              value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+            )
+          }
+        />
+      </div>
+
+      {(message || error) && (
+        <div className="space-y-2 text-sm">
+          {message && <p className="text-success">{message}</p>}
+          {error && <p className="text-danger">{error}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <input className="input" value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
+function TextAreaField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <textarea
+        className="textarea min-h-28"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}

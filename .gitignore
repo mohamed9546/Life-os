@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.env*
+!.env.example
+!.env.production.example
+!.env.staging.example
+!.env.local.template
+data/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+tsconfig.tsbuildinfo

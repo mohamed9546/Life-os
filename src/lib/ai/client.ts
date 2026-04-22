@@ -1,0 +1,836 @@
+// ============================================================
+// Core AI client for the local AI runtime.
+// Defaults to Ollama and supports OpenAI/Anthropic-compatible
+// endpoint modes for local tooling compatibility.
+// ============================================================
+
+import {
+  AIMetadata,
+  AIFailureKind,
+  AICompatibilityMode,
+  AIConfig,
+  AIHealthStatus,
+  AITaskType,
+} from "@/types";
+import {
+  loadAIConfig,
+  getTaskRuntimeSettings,
+  AI_TASK_ORDER,
+} from "./config";
+import { checkAIRateLimit, recordAICall } from "./rate-limiter";
+import { appendToCollection, Collections } from "@/lib/storage";
+
+export interface AICallOptions {
+  taskType: string;
+  prompt: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  rawInput?: unknown;
+  skipRateLimit?: boolean;
+  /** Skip JSON format enforcement and return raw text. Use for chat/free-text tasks. */
+  rawTextOutput?: boolean;
+}
+
+export interface AICallResult<T = unknown> {
+  success: boolean;
+  data?: T;
+  meta?: AIMetadata;
+  error?: string;
+  rawOutput?: string;
+  failureKind?: AIFailureKind;
+  attemptCount?: number;
+  fallbackAttempted?: boolean;
+  effectiveTimeoutMs?: number;
+}
+
+interface AILogEntry {
+  timestamp: string;
+  taskType: string;
+  model: string;
+  success: boolean;
+  durationMs: number;
+  inputBytes: number;
+  outputBytes: number;
+  fallbackUsed: boolean;
+  fallbackAttempted: boolean;
+  attemptCount: number;
+  effectiveTimeoutMs: number;
+  jsonExtractionFallback?: boolean;
+  failureKind?: AIFailureKind;
+  error?: string;
+  inputPreview?: string;
+}
+
+async function logAICall(entry: AILogEntry): Promise<void> {
+  try {
+    await appendToCollection(Collections.AI_LOG, [entry]);
+  } catch (err) {
+    console.error("[ai-client] Failed to write AI log:", err);
+  }
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (
+      (err instanceof DOMException && err.name === "AbortError") ||
+      (err instanceof Error && err.name === "AbortError")
+    ) {
+      const timeoutError = new Error(
+        `Request timed out after ${timeoutMs}ms`
+      ) as Error & { code?: string };
+      timeoutError.name = "AIRequestTimeoutError";
+      timeoutError.code = "AI_TIMEOUT";
+      throw timeoutError;
+    }
+
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function getSerializedInput(rawInput: unknown): string {
+  if (typeof rawInput === "string") {
+    return rawInput;
+  }
+
+  try {
+    return JSON.stringify(rawInput ?? "");
+  } catch {
+    return String(rawInput ?? "");
+  }
+}
+
+function getByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+function extractJSON(raw: string): {
+  parsed: unknown;
+  jsonExtractionFallback: boolean;
+} {
+  const trimmed = raw.trim();
+
+  try {
+    return {
+      parsed: JSON.parse(trimmed),
+      jsonExtractionFallback: false,
+    };
+  } catch {
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fenced) {
+      return {
+        parsed: JSON.parse(fenced[1]),
+        jsonExtractionFallback: true,
+      };
+    }
+
+    const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      return {
+        parsed: JSON.parse(objectMatch[0]),
+        jsonExtractionFallback: true,
+      };
+    }
+  }
+
+  const invalidJsonError = new Error(
+    "Could not extract valid JSON from AI response"
+  ) as Error & { code?: string };
+  invalidJsonError.name = "AIInvalidJsonError";
+  invalidJsonError.code = "AI_INVALID_JSON";
+  throw invalidJsonError;
+}
+
+function classifyAIError(err: unknown): AIFailureKind {
+  if (
+    (err instanceof Error && err.name === "AIRequestTimeoutError") ||
+    (err instanceof Error && "code" in err && err.code === "AI_TIMEOUT")
+  ) {
+    return "timeout";
+  }
+
+  if (
+    (err instanceof Error && err.name === "AIInvalidJsonError") ||
+    (err instanceof Error && "code" in err && err.code === "AI_INVALID_JSON")
+  ) {
+    return "invalid_json";
+  }
+
+  return "runtime_error";
+}
+
+async function callRuntime(
+  config: AIConfig,
+  model: string,
+  options: AICallOptions,
+  temperature: number,
+  maxTokens: number,
+  timeoutMs: number
+): Promise<{
+  parsed: unknown;
+  rawOutput: string;
+  durationMs: number;
+  model: string;
+  jsonExtractionFallback: boolean;
+}> {
+  const rawText = Boolean(options.rawTextOutput);
+  const startedAt = Date.now();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+
+  let response: Response;
+
+  if (config.provider === "gemini") {
+    if (!config.apiKey) {
+      throw new Error("GEMINI_API_KEY is required for Gemini provider");
+    }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
+    response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: options.systemPrompt ? { parts: [{ text: options.systemPrompt }] } : undefined,
+          contents: [{ role: "user", parts: [{ text: options.prompt }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: maxTokens,
+            responseMimeType: rawText ? "text/plain" : "application/json",
+          }
+        }),
+      },
+      timeoutMs
+    );
+  } else {
+    switch (config.compatibilityMode) {
+    case "ollama": {
+      const prompt = options.systemPrompt
+        ? `${options.systemPrompt}\n\n${options.prompt}`
+        : options.prompt;
+
+      response = await fetchWithTimeout(
+        `${config.baseUrl}/api/generate`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model,
+            prompt,
+            stream: false,
+            ...(rawText ? {} : { format: "json" }),
+            options: {
+              temperature,
+              num_predict: maxTokens,
+            },
+          }),
+        },
+        timeoutMs
+      );
+      break;
+    }
+    case "openai": {
+      response = await fetchWithTimeout(
+        `${config.baseUrl}/v1/chat/completions`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model,
+            temperature,
+            max_tokens: maxTokens,
+            ...(rawText ? {} : { response_format: { type: "json_object" } }),
+            messages: [
+              ...(options.systemPrompt
+                ? [{ role: "system", content: options.systemPrompt }]
+                : []),
+              { role: "user", content: options.prompt },
+            ],
+          }),
+        },
+        timeoutMs
+      );
+      break;
+    }
+    case "anthropic": {
+      const anthropicHeaders = {
+        ...headers,
+        "anthropic-version": "2023-06-01",
+        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+      };
+
+      response = await fetchWithTimeout(
+        `${config.baseUrl}/v1/messages`,
+        {
+          method: "POST",
+          headers: anthropicHeaders,
+          body: JSON.stringify({
+            model,
+            temperature,
+            max_tokens: maxTokens,
+            system: options.systemPrompt,
+            messages: [{ role: "user", content: options.prompt }],
+          }),
+        },
+        timeoutMs
+      );
+      break;
+    }
+    default:
+        throw new Error(`Unsupported AI compatibility mode: ${config.compatibilityMode}`);
+    }
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "unknown error");
+    throw new Error(`AI runtime returned ${response.status}: ${errorText}`);
+  }
+
+  const durationMs = Date.now() - startedAt;
+  const payload = await response.json().catch(async () => await response.text());
+
+  if (typeof payload === "string") {
+    if (rawText) {
+      return { parsed: payload, rawOutput: payload, durationMs, model, jsonExtractionFallback: false };
+    }
+    const extracted = extractJSON(payload);
+    return {
+      parsed: extracted.parsed,
+      rawOutput: payload,
+      durationMs,
+      model,
+      jsonExtractionFallback: extracted.jsonExtractionFallback,
+    };
+  }
+
+  if (config.provider === "gemini") {
+    const content = payload.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawOutput = typeof content === "string" ? content : JSON.stringify(payload);
+    if (rawText) {
+      return { parsed: rawOutput, rawOutput, durationMs, model, jsonExtractionFallback: false };
+    }
+    const extracted = extractJSON(rawOutput);
+    return {
+      parsed: extracted.parsed,
+      rawOutput,
+      durationMs,
+      model,
+      jsonExtractionFallback: extracted.jsonExtractionFallback,
+    };
+  }
+
+  switch (config.compatibilityMode) {
+    case "ollama": {
+      const rawOutput =
+        typeof payload.response === "string"
+          ? payload.response
+          : JSON.stringify(payload);
+      if (rawText) {
+        return { parsed: rawOutput, rawOutput, durationMs, model: payload.model || model, jsonExtractionFallback: false };
+      }
+      const extracted = extractJSON(rawOutput);
+      return {
+        parsed: extracted.parsed,
+        rawOutput,
+        durationMs,
+        model: payload.model || model,
+        jsonExtractionFallback: extracted.jsonExtractionFallback,
+      };
+    }
+    case "openai": {
+      const content = payload.choices?.[0]?.message?.content;
+      const rawOutput =
+        typeof content === "string" ? content : JSON.stringify(payload);
+      if (rawText) {
+        return { parsed: rawOutput, rawOutput, durationMs, model: payload.model || model, jsonExtractionFallback: false };
+      }
+      const extracted = extractJSON(rawOutput);
+      return {
+        parsed: extracted.parsed,
+        rawOutput,
+        durationMs,
+        model: payload.model || model,
+        jsonExtractionFallback: extracted.jsonExtractionFallback,
+      };
+    }
+    case "anthropic": {
+      const contentBlocks = Array.isArray(payload.content) ? payload.content : [];
+      const textBlock = contentBlocks.find(
+        (block: { type?: string; text?: string }) =>
+          block?.type === "text" && typeof block.text === "string"
+      );
+      const rawOutput =
+        typeof textBlock?.text === "string"
+          ? textBlock.text
+          : JSON.stringify(payload);
+      if (rawText) {
+        return { parsed: rawOutput, rawOutput, durationMs, model: payload.model || model, jsonExtractionFallback: false };
+      }
+      const extracted = extractJSON(rawOutput);
+      return {
+        parsed: extracted.parsed,
+        rawOutput,
+        durationMs,
+        model: payload.model || model,
+        jsonExtractionFallback: extracted.jsonExtractionFallback,
+      };
+    }
+    default:
+      throw new Error(`Unsupported AI compatibility mode: ${config.compatibilityMode}`);
+  }
+}
+
+export async function callAI<T = unknown>(
+  options: AICallOptions
+): Promise<AICallResult<T>> {
+  const config = await loadAIConfig();
+  const taskType = options.taskType as AITaskType;
+  const taskConfig = getTaskRuntimeSettings(config, taskType);
+  const temperature = options.temperature ?? taskConfig.temperature;
+  const maxTokens = options.maxTokens ?? taskConfig.maxTokens;
+  const effectiveTimeoutMs = taskConfig.timeoutMs;
+
+  if (!config.enabled) {
+    return {
+      success: false,
+      error: "Local AI runtime is disabled",
+      failureKind: "runtime_error",
+      effectiveTimeoutMs,
+    };
+  }
+
+  if (!taskConfig.enabled) {
+    return {
+      success: false,
+      error: `AI task "${options.taskType}" is disabled in settings`,
+      failureKind: "runtime_error",
+      effectiveTimeoutMs,
+    };
+  }
+
+  if (!options.skipRateLimit) {
+    const rateCheck = await checkAIRateLimit(options.taskType);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: rateCheck.reason,
+        failureKind: "rate_limited",
+        attemptCount: 0,
+        fallbackAttempted: false,
+        effectiveTimeoutMs,
+      };
+    }
+  }
+
+  const primaryAttempts = Math.max(1, taskConfig.retryAttempts + 1);
+  const candidateModels = [taskConfig.model];
+
+  if (taskConfig.fallbackModel && taskConfig.fallbackModel !== taskConfig.model) {
+    candidateModels.push(taskConfig.fallbackModel);
+  }
+
+  let lastError = "Unknown AI error";
+  let lastFailureKind: AIFailureKind = "runtime_error";
+  let lastRawOutput = "";
+  let totalAttemptCount = 0;
+  let fallbackAttempted = false;
+  const serializedInput = getSerializedInput(options.rawInput ?? options.prompt);
+  const inputBytes = getByteLength(serializedInput);
+
+  for (let modelIndex = 0; modelIndex < candidateModels.length; modelIndex++) {
+    const model = candidateModels[modelIndex];
+    const attemptsForModel = modelIndex === 0 ? primaryAttempts : 1;
+
+    for (let attempt = 0; attempt < attemptsForModel; attempt++) {
+      totalAttemptCount += 1;
+      if (modelIndex > 0) {
+        fallbackAttempted = true;
+      }
+
+      try {
+        if (attempt > 0 || modelIndex > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, config.retryDelayMs)
+          );
+        }
+
+        const result = await callRuntime(
+          config,
+          model,
+          options,
+          temperature,
+          maxTokens,
+          effectiveTimeoutMs
+        );
+
+        if (!options.skipRateLimit) {
+          await recordAICall(options.taskType);
+        }
+
+        const meta: AIMetadata = {
+          model: result.model,
+          promptType: options.taskType,
+          timestamp: new Date().toISOString(),
+          confidence: 0,
+          durationMs: result.durationMs,
+          inputBytes,
+          outputBytes: getByteLength(result.rawOutput),
+          fallbackUsed: model !== taskConfig.model,
+          fallbackAttempted,
+          attemptCount: totalAttemptCount,
+          effectiveTimeoutMs,
+          jsonExtractionFallback: result.jsonExtractionFallback,
+        };
+
+        await logAICall({
+          timestamp: meta.timestamp,
+          taskType: options.taskType,
+          model: result.model,
+          success: true,
+          durationMs: result.durationMs,
+          inputBytes,
+          outputBytes: meta.outputBytes,
+          fallbackUsed: model !== taskConfig.model,
+          fallbackAttempted,
+          attemptCount: totalAttemptCount,
+          effectiveTimeoutMs,
+          jsonExtractionFallback: result.jsonExtractionFallback,
+          inputPreview:
+            serializedInput.slice(0, 200),
+        });
+
+        return {
+          success: true,
+          data: result.parsed as T,
+          meta,
+          rawOutput: result.rawOutput,
+        };
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : "Unknown AI error";
+        lastFailureKind = classifyAIError(err);
+        lastRawOutput = "";
+        console.error(
+          `[ai-client] ${options.taskType} using ${model} attempt ${attempt + 1} failed:`,
+          lastError
+        );
+      }
+    }
+  }
+
+  await logAICall({
+    timestamp: new Date().toISOString(),
+    taskType: options.taskType,
+    model: candidateModels[candidateModels.length - 1],
+    success: false,
+    durationMs: 0,
+    inputBytes,
+    outputBytes: 0,
+    fallbackUsed: candidateModels.length > 1,
+    fallbackAttempted,
+    attemptCount: totalAttemptCount,
+    effectiveTimeoutMs,
+    failureKind: lastFailureKind,
+    error: lastError,
+    inputPreview: serializedInput.slice(0, 200),
+  });
+
+  return {
+    success: false,
+    error: `AI request failed: ${lastError}`,
+    rawOutput: lastRawOutput,
+    failureKind: lastFailureKind,
+    attemptCount: totalAttemptCount,
+    fallbackAttempted,
+    effectiveTimeoutMs,
+  };
+}
+
+function buildHealthEndpoints(mode: AICompatibilityMode): string[] {
+  switch (mode) {
+    case "ollama":
+      return ["/api/tags", "/api/version"];
+    case "openai":
+      return ["/v1/models", "/health", "/"];
+    case "anthropic":
+      return ["/health", "/v1/models", "/"];
+    default:
+      return ["/health", "/"];
+  }
+}
+
+function extractAvailableModels(payload: unknown, mode: AICompatibilityMode): string[] {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  if (mode === "ollama" && Array.isArray((payload as { models?: unknown[] }).models)) {
+    return ((payload as { models: Array<{ name?: string }> }).models || [])
+      .map((model) => model.name)
+      .filter((name): name is string => Boolean(name));
+  }
+
+  if (Array.isArray((payload as { data?: unknown[] }).data)) {
+    return ((payload as { data: Array<{ id?: string }> }).data || [])
+      .map((model) => model.id)
+      .filter((id): id is string => Boolean(id));
+  }
+
+  return [];
+}
+
+function getConfiguredModelNames(config: AIConfig): string[] {
+  const models = new Set<string>();
+
+  if (config.model) {
+    models.add(config.model);
+  }
+
+  if (config.fallbackModel) {
+    models.add(config.fallbackModel);
+  }
+
+  for (const taskType of AI_TASK_ORDER) {
+    const taskConfig = getTaskRuntimeSettings(config, taskType);
+
+    if (!taskConfig.enabled) {
+      continue;
+    }
+
+    if (taskConfig.model) {
+      models.add(taskConfig.model);
+    }
+
+    if (taskConfig.fallbackModel) {
+      models.add(taskConfig.fallbackModel);
+    }
+  }
+
+  return Array.from(models);
+}
+
+export async function checkAIHealth(): Promise<AIHealthStatus> {
+  const config = await loadAIConfig();
+  const checkedAt = new Date().toISOString();
+  const configuredTasks = AI_TASK_ORDER.map((taskType) => {
+    const taskConfig = getTaskRuntimeSettings(config, taskType);
+    return {
+      taskType,
+      enabled: taskConfig.enabled,
+      model: taskConfig.model,
+      fallbackModel: taskConfig.fallbackModel,
+    };
+  });
+
+  if (!config.enabled) {
+    return {
+      available: false,
+      provider: config.provider,
+      mode: config.mode,
+      compatibilityMode: config.compatibilityMode,
+      checkedAt,
+      endpoint: config.baseUrl,
+      primaryModel: config.model,
+      fallbackModel: config.fallbackModel,
+      responseTimeMs: null,
+      availableModels: [],
+      configuredTasks,
+      error: "Local AI runtime is disabled",
+    };
+  }
+
+  const headers = config.apiKey
+    ? { Authorization: `Bearer ${config.apiKey}` }
+    : undefined;
+
+  if (config.provider === "gemini") {
+    if (!config.apiKey) {
+      return {
+        available: false,
+        provider: config.provider,
+        mode: config.mode,
+        compatibilityMode: config.compatibilityMode,
+        checkedAt,
+        endpoint: "gemini",
+        primaryModel: config.model,
+        fallbackModel: config.fallbackModel,
+        responseTimeMs: null,
+        availableModels: [],
+        configuredTasks,
+        error: "GEMINI_API_KEY is not set",
+      };
+    }
+
+    const startedAt = Date.now();
+    try {
+      const response = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${config.apiKey}`,
+        { method: "GET" },
+        Math.min(config.timeoutMs, 10_000)
+      );
+
+      if (!response.ok) {
+        throw new Error(`Gemini health check failed: ${response.status}`);
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const models = payload.models || [];
+      const availableModels = models.map((m: any) => m.name.replace("models/", ""));
+
+      return {
+        available: true,
+        provider: config.provider,
+        mode: config.mode,
+        compatibilityMode: config.compatibilityMode,
+        checkedAt,
+        endpoint: "gemini",
+        primaryModel: config.model,
+        fallbackModel: config.fallbackModel,
+        responseTimeMs: Date.now() - startedAt,
+        availableModels,
+        configuredTasks,
+      };
+    } catch (err) {
+      return {
+        available: false,
+        provider: config.provider,
+        mode: config.mode,
+        compatibilityMode: config.compatibilityMode,
+        checkedAt,
+        endpoint: "gemini",
+        primaryModel: config.model,
+        fallbackModel: config.fallbackModel,
+        responseTimeMs: Date.now() - startedAt,
+        availableModels: [],
+        configuredTasks,
+        error: err instanceof Error ? err.message : "Gemini health check failed",
+      };
+    }
+  }
+
+  const candidates = buildHealthEndpoints(config.compatibilityMode);
+  let responseTimeMs: number | null = null;
+  let availableModels: string[] = [];
+  let lastError = "No AI runtime response";
+
+  for (const path of candidates) {
+    const startedAt = Date.now();
+
+    try {
+      const response = await fetchWithTimeout(
+        `${config.baseUrl}${path}`,
+        { method: "GET", headers },
+        Math.min(config.timeoutMs, 10_000)
+      );
+
+      if (!response.ok) {
+        lastError = `Health endpoint ${path} returned ${response.status}`;
+        continue;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      responseTimeMs = Date.now() - startedAt;
+      availableModels = extractAvailableModels(payload, config.compatibilityMode);
+      const configuredModels = getConfiguredModelNames(config);
+
+      if (config.compatibilityMode === "ollama") {
+        if (availableModels.length === 0) {
+          return {
+            available: false,
+            provider: config.provider,
+            mode: config.mode,
+            compatibilityMode: config.compatibilityMode,
+            checkedAt,
+            endpoint: config.baseUrl,
+            primaryModel: config.model,
+            fallbackModel: config.fallbackModel,
+            responseTimeMs,
+            availableModels,
+            configuredTasks,
+            error: "Ollama is reachable but no local models are installed",
+          };
+        }
+
+        const missingModels = configuredModels.filter(
+          (model) => !availableModels.includes(model)
+        );
+
+        if (missingModels.length > 0) {
+          return {
+            available: false,
+            provider: config.provider,
+            mode: config.mode,
+            compatibilityMode: config.compatibilityMode,
+            checkedAt,
+            endpoint: config.baseUrl,
+            primaryModel: config.model,
+            fallbackModel: config.fallbackModel,
+            responseTimeMs,
+            availableModels,
+            configuredTasks,
+            error: `Configured Ollama models are missing: ${missingModels.join(", ")}`,
+          };
+        }
+      }
+
+      return {
+        available: true,
+        provider: config.provider,
+        mode: config.mode,
+        compatibilityMode: config.compatibilityMode,
+        checkedAt,
+        endpoint: config.baseUrl,
+        primaryModel: config.model,
+        fallbackModel: config.fallbackModel,
+        responseTimeMs,
+        availableModels,
+        configuredTasks,
+      };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : "Health check failed";
+    }
+  }
+
+  return {
+    available: false,
+    provider: config.provider,
+    mode: config.mode,
+    compatibilityMode: config.compatibilityMode,
+    checkedAt,
+    endpoint: config.baseUrl,
+    primaryModel: config.model,
+    fallbackModel: config.fallbackModel,
+    responseTimeMs,
+    availableModels,
+    configuredTasks,
+    error: lastError,
+  };
+}
+
+export async function testAIPrompt(): Promise<AICallResult<{ message: string }>> {
+  return callAI<{ message: string }>({
+    taskType: "health-test",
+    prompt: 'Respond with exactly this JSON: {"message":"AI is operational"}.',
+    systemPrompt: "You are a health check worker. Reply with valid JSON only.",
+    skipRateLimit: true,
+  });
+}

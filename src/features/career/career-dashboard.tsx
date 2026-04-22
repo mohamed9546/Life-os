@@ -1,0 +1,1156 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Zap, RefreshCw, ExternalLink, Check, X,
+  ChevronDown, Brain, Target, TrendingUp,
+  Briefcase, FileText, Users, AlertTriangle,
+  PlayCircle, Plus,
+} from "lucide-react";
+import { JobDetailPanel } from "@/components/job-detail-panel";
+import {
+  FilterBar as JobFilterBar,
+  applyFilters,
+  DEFAULT_FILTERS,
+  type JobFilters,
+} from "@/components/filter-bar";
+import { useJobs } from "@/hooks/use-jobs";
+import { usePipeline, type PipelineApiResult } from "@/hooks/use-pipeline";
+import { useApi } from "@/hooks/use-api";
+import { EnrichedJob, ParsedJobPosting, JobFitEvaluation, AIMetadata } from "@/types";
+import {
+  Panel,
+  StatusChip,
+  ActionButton,
+  AlertBanner,
+  LoadingState,
+  EmptyState,
+  FailureState,
+  FilterBar as SysFilterBar,
+} from "@/components/ui/system";
+import { cn } from "@/lib/utils";
+
+// ---- Types ----
+
+type Section = "analyst" | "inbox" | "pipeline";
+
+const PRIORITY_CHIP: Record<string, { tone: "success" | "warning" | "info" | "danger"; label: string }> = {
+  high:   { tone: "success", label: "High" },
+  medium: { tone: "warning", label: "Medium" },
+  low:    { tone: "info",    label: "Low" },
+  reject: { tone: "danger",  label: "Reject" },
+};
+
+const STAGE_DOT: Record<string, string> = {
+  inbox:    "bg-slate-500",
+  tracked:  "bg-blue-400",
+  applied:  "bg-violet-400",
+  rejected: "bg-rose-400",
+  archived: "bg-slate-600",
+};
+
+const TRACK_LABELS: Record<string, string> = {
+  clinical:   "Clinical",
+  regulatory: "Regulatory",
+  qa:         "QA",
+  pv:         "PV",
+  medinfo:    "MedInfo",
+};
+
+// ---- Main component ----
+
+export function CareerDashboard() {
+  const [section, setSection] = useState<Section>("inbox");
+  const [selectedJob, setSelectedJob] = useState<EnrichedJob | null>(null);
+  const jobs = useJobs();
+  const pipeline = usePipeline();
+
+  // Keep selectedJob in sync when jobs refresh
+  useEffect(() => {
+    if (!selectedJob) return;
+    const all = [...jobs.inbox, ...jobs.ranked, ...jobs.tracked, ...jobs.rejected];
+    const next = all.find((j) => j.id === selectedJob.id);
+    if (!next) { setSelectedJob(null); return; }
+    if (next !== selectedJob) setSelectedJob(next);
+  }, [selectedJob, jobs.inbox, jobs.ranked, jobs.tracked, jobs.rejected]);
+
+  const kpis = useMemo(() => {
+    const ranked = jobs.ranked;
+    const avgFit = ranked.length
+      ? Math.round(ranked.reduce((s, j) => s + (j.fit?.data?.fitScore ?? 0), 0) / ranked.length)
+      : 0;
+    const highPriority = ranked.filter(
+      (j) => j.fit?.data?.priorityBand === "high"
+    ).length;
+    const applied = jobs.tracked.filter((j) => j.status === "applied").length;
+    return { avgFit, highPriority, applied };
+  }, [jobs.ranked, jobs.tracked]);
+
+  const allSources = useMemo(() => {
+    const s = new Set<string>();
+    [...jobs.inbox, ...jobs.ranked, ...jobs.tracked].forEach((j) => s.add(j.raw.source));
+    return Array.from(s).sort();
+  }, [jobs.inbox, jobs.ranked, jobs.tracked]);
+
+  const hasDetail = selectedJob !== null;
+
+  return (
+    <div className="space-y-5">
+      {/* Hero */}
+      <CareerHero jobs={jobs} pipeline={pipeline} />
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <KpiCell label="Ranked Inbox"   value={jobs.ranked.length}  tone="info" />
+        <KpiCell label="Tracked"        value={jobs.tracked.length} tone="success" />
+        <KpiCell label="Avg Fit"        value={`${kpis.avgFit}`}    tone={kpis.avgFit >= 60 ? "success" : "neutral"} />
+        <KpiCell label="High Priority"  value={kpis.highPriority}   tone={kpis.highPriority > 0 ? "warning" : "neutral"} />
+        <KpiCell label="Applied"        value={kpis.applied}        tone="info" />
+        <KpiCell label="Total Active"   value={jobs.inbox.length + jobs.ranked.length + jobs.tracked.length} />
+      </div>
+
+      {/* Pipeline result banner */}
+      {pipeline.lastResult?.summary && (
+        <PipelineResultBanner result={pipeline.lastResult} />
+      )}
+
+      {/* Section nav */}
+      <SysFilterBar
+        options={[
+          { value: "analyst", label: "AI Analyst" },
+          { value: "inbox",   label: "Ranked Inbox", count: jobs.ranked.length },
+          { value: "pipeline",label: "Pipeline",     count: jobs.tracked.length },
+        ]}
+        value={section}
+        onChange={(v) => {
+          setSection(v as Section);
+          setSelectedJob(null);
+        }}
+      />
+
+      {/* Main layout */}
+      <div
+        className={cn(
+          "grid gap-5",
+          hasDetail ? "grid-cols-1 lg:grid-cols-[1fr_380px]" : "grid-cols-1"
+        )}
+      >
+        {/* Left content */}
+        <div className="min-w-0">
+          {section === "analyst" && (
+            <AnalystSection onJobSaved={jobs.refresh} />
+          )}
+          {section === "inbox" && (
+            <InboxSection
+              jobs={jobs}
+              sources={allSources}
+              selectedJob={selectedJob}
+              onSelect={setSelectedJob}
+            />
+          )}
+          {section === "pipeline" && (
+            <PipelineSection
+              jobs={jobs}
+              selectedJob={selectedJob}
+              onSelect={setSelectedJob}
+            />
+          )}
+        </div>
+
+        {/* Detail rail */}
+        {hasDetail && (
+          <div className="min-w-0">
+            <div className="sticky top-24 space-y-3">
+              <JobDetailPanel
+                job={selectedJob!}
+                onTrack={jobs.trackJob}
+                onReject={jobs.rejectJob}
+                onUnreject={jobs.unrejectJob}
+                onApply={jobs.markApplied}
+                onRefreshIntel={jobs.refreshJobIntel}
+                onRefreshContacts={jobs.refreshJobContacts}
+                onRefreshOutreach={jobs.refreshJobOutreach}
+                onRerunParse={jobs.rerunJobParse}
+                onRerunFit={jobs.rerunJobFit}
+                onClose={() => setSelectedJob(null)}
+              />
+              <CareerToolsCluster job={selectedJob!} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- Hero ----
+
+function CareerHero({
+  jobs,
+  pipeline,
+}: {
+  jobs: ReturnType<typeof useJobs>;
+  pipeline: ReturnType<typeof usePipeline>;
+}) {
+  return (
+    <Panel tone="hero" className="relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-64 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.08),transparent_56%)]" />
+      <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            Flagship · Career Intelligence
+          </p>
+          <h1 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-white sm:text-3xl">
+            Career Pipeline Manager
+          </h1>
+          <p className="mt-2 text-sm leading-7 text-slate-400 max-w-lg">
+            Paste, rank, evaluate, and act on opportunities across PV, QA, Regulatory, Clinical, and MedInfo lanes.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <StatusChip tone={jobs.sources.filter((s) => s.active).length > 0 ? "success" : "warning"}>
+              {jobs.sources.filter((s) => s.active).length}/{jobs.sources.length} sources
+            </StatusChip>
+            <StatusChip tone={jobs.ranked.length > 0 ? "info" : "neutral"}>
+              {jobs.ranked.length} ranked
+            </StatusChip>
+            {jobs.tracked.length > 0 && (
+              <StatusChip tone="success">{jobs.tracked.length} tracked</StatusChip>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <ActionButton
+            variant="primary"
+            onClick={() => pipeline.runPipeline()}
+            disabled={pipeline.running}
+            className="gap-2"
+          >
+            <PlayCircle size={14} />
+            {pipeline.running ? "Running…" : "Run Pipeline"}
+          </ActionButton>
+          <ActionButton
+            variant="secondary"
+            onClick={() => pipeline.runPipeline({ skipEnrich: true, skipRank: true })}
+            disabled={pipeline.running}
+          >
+            Fetch Only
+          </ActionButton>
+          <ActionButton variant="ghost" onClick={jobs.refresh} disabled={jobs.loading}>
+            <RefreshCw size={13} />
+          </ActionButton>
+          {pipeline.error && (
+            <span className="text-xs text-rose-400">{pipeline.error}</span>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+// ---- KPI cell ----
+
+function KpiCell({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string | number;
+  tone?: "neutral" | "success" | "info" | "warning" | "danger";
+}) {
+  const valueStyles = {
+    neutral: "text-white",
+    success: "text-emerald-300",
+    info:    "text-blue-300",
+    warning: "text-amber-300",
+    danger:  "text-rose-300",
+  };
+  return (
+    <Panel className="py-4">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">{label}</p>
+      <p className={cn("mt-2 text-2xl font-semibold tracking-tight tabular-nums", valueStyles[tone])}>
+        {value}
+      </p>
+    </Panel>
+  );
+}
+
+// ---- Pipeline result banner ----
+
+function PipelineResultBanner({ result }: { result: PipelineApiResult }) {
+  const s = result.summary;
+  if (!s) return null;
+  return (
+    <AlertBanner
+      tone="info"
+      title={`Pipeline complete — ${s.fetched} fetched, ${s.dedupedNew} new, ${s.enriched} enriched, ${s.ranked} ranked`}
+      description={[
+        s.contactsGenerated > 0 ? `${s.contactsGenerated} contacts` : null,
+        s.outreachGenerated > 0 ? `${s.outreachGenerated} outreach` : null,
+        s.failed > 0 ? `${s.failed} failed` : null,
+        result.enrichment?.fallbackCount ? `${result.enrichment.fallbackCount} fallbacks` : null,
+      ].filter(Boolean).join(" · ") || undefined}
+    />
+  );
+}
+
+// ============================================================
+// SECTION 1 — AI Job Analyst
+// ============================================================
+
+interface AnalystState {
+  rawText: string;
+  sourceTag: string;
+  sourceLink: string;
+  locationHint: string;
+}
+
+interface ParseResponse  { success: boolean; data: ParsedJobPosting;  meta: AIMetadata }
+interface EvalResponse   { success: boolean; data: JobFitEvaluation;  meta: AIMetadata }
+interface SaveResponse   { success: boolean }
+
+function AnalystSection({ onJobSaved }: { onJobSaved: () => void }) {
+  const [form, setForm] = useState<AnalystState>({
+    rawText: "", sourceTag: "manual", sourceLink: "", locationHint: "",
+  });
+  const [parsed,     setParsed]     = useState<ParsedJobPosting | null>(null);
+  const [evaluation, setEvaluation] = useState<JobFitEvaluation | null>(null);
+  const [parseMeta,  setParseMeta]  = useState<AIMetadata | null>(null);
+  const [evalMeta,   setEvalMeta]   = useState<AIMetadata | null>(null);
+
+  const parseApi = useApi<ParseResponse>();
+  const evalApi  = useApi<EvalResponse>();
+  const saveApi  = useApi<SaveResponse>();
+
+  const phase: "idle" | "parsing" | "evaluating" | "done" | "error" =
+    parseApi.loading ? "parsing"
+    : evalApi.loading ? "evaluating"
+    : parseApi.error  ? "error"
+    : parsed          ? "done"
+    : "idle";
+
+  const handleAnalyze = async () => {
+    if (form.rawText.trim().length < 20) return;
+    setParsed(null); setEvaluation(null);
+
+    const r1 = await parseApi.call("/api/ai/parse-job", {
+      method: "POST",
+      body: JSON.stringify({ rawText: form.rawText }),
+    });
+    if (!r1?.success || !r1.data) return;
+    setParsed(r1.data);
+    setParseMeta(r1.meta);
+
+    const r2 = await evalApi.call("/api/ai/evaluate-job", {
+      method: "POST",
+      body: JSON.stringify({ job: r1.data }),
+    });
+    if (r2?.success && r2.data) {
+      setEvaluation(r2.data);
+      setEvalMeta(r2.meta);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!parsed) return;
+    const result = await saveApi.call("/api/jobs/manual", {
+      method: "POST",
+      body: JSON.stringify({ rawText: form.rawText, parsed, evaluation }),
+    });
+    if (result?.success) onJobSaved();
+  };
+
+  const handleReset = () => {
+    setForm({ rawText: "", sourceTag: "manual", sourceLink: "", locationHint: "" });
+    setParsed(null); setEvaluation(null);
+    setParseMeta(null); setEvalMeta(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Input panel */}
+      <Panel>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Brain size={16} className="text-slate-400" />
+            <h2 className="text-sm font-semibold text-white">AI Job Analyst</h2>
+          </div>
+          <PhaseChip phase={phase} />
+        </div>
+
+        <textarea
+          className="input min-h-[140px] resize-y text-sm leading-relaxed"
+          placeholder="Paste the full job posting here — title, company, requirements, responsibilities…"
+          value={form.rawText}
+          onChange={(e) => setForm((f) => ({ ...f, rawText: e.target.value }))}
+        />
+
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div>
+            <label className="label">Source</label>
+            <input
+              className="input"
+              placeholder="e.g. reed.co.uk"
+              value={form.sourceTag}
+              onChange={(e) => setForm((f) => ({ ...f, sourceTag: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Source URL</label>
+            <input
+              className="input"
+              placeholder="https://…"
+              value={form.sourceLink}
+              onChange={(e) => setForm((f) => ({ ...f, sourceLink: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Location hint</label>
+            <input
+              className="input"
+              placeholder="e.g. Glasgow, Remote UK"
+              value={form.locationHint}
+              onChange={(e) => setForm((f) => ({ ...f, locationHint: e.target.value }))}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2 flex-wrap">
+          <ActionButton
+            variant="primary"
+            onClick={handleAnalyze}
+            disabled={phase === "parsing" || phase === "evaluating" || form.rawText.trim().length < 20}
+          >
+            <Brain size={14} />
+            {phase === "parsing" ? "Parsing…" : phase === "evaluating" ? "Evaluating…" : "Parse & Evaluate"}
+          </ActionButton>
+          {phase === "done" && (
+            <ActionButton variant="secondary" onClick={handleSave} disabled={saveApi.loading}>
+              {saveApi.loading ? "Saving…" : "Save to Inbox"}
+            </ActionButton>
+          )}
+          {(parsed || form.rawText) && (
+            <ActionButton variant="ghost" onClick={handleReset} className="text-slate-500">
+              <X size={13} /> Clear
+            </ActionButton>
+          )}
+          <span className="ml-auto text-[11px] text-slate-600 tabular-nums">
+            {form.rawText.length > 0 ? `${form.rawText.length} chars` : ""}
+          </span>
+        </div>
+
+        {(parseApi.error || evalApi.error) && (
+          <AlertBanner tone="danger" title={parseApi.error || evalApi.error || "Analysis failed"} className="mt-3" />
+        )}
+        {saveApi.data?.success && (
+          <AlertBanner tone="success" title="Saved to inbox" className="mt-3" />
+        )}
+      </Panel>
+
+      {/* Analysis output */}
+      {parsed && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Parsed summary */}
+          <Panel>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-white leading-tight">
+                  {parsed.title}
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  {parsed.company}
+                  {parsed.location ? ` · ${parsed.location}` : ""}
+                </p>
+              </div>
+              {evaluation && (
+                <PriorityChip band={evaluation.priorityBand} />
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {[
+                ["Track",   TRACK_LABELS[parsed.roleTrack] || parsed.roleTrack],
+                ["Remote",  parsed.remoteType],
+                ["Type",    parsed.employmentType],
+                ["Level",   parsed.seniority],
+                ["Salary",  parsed.salaryText || "—"],
+                ["Confidence", `${Math.round(parsed.confidence * 100)}%`],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-600">{label}</p>
+                  <p className="text-xs font-medium text-slate-300 mt-0.5 capitalize">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {parsed.summary && (
+              <p className="text-sm text-slate-400 leading-6 mb-4">{parsed.summary}</p>
+            )}
+
+            <div className="space-y-3">
+              {parsed.mustHaves.length > 0 && (
+                <RequirementList label="Must haves" items={parsed.mustHaves} tone="success" />
+              )}
+              {parsed.niceToHaves.length > 0 && (
+                <RequirementList label="Nice to haves" items={parsed.niceToHaves} tone="neutral" />
+              )}
+              {parsed.redFlags.length > 0 && (
+                <RequirementList label="Red flags" items={parsed.redFlags} tone="danger" />
+              )}
+            </div>
+
+            {parseMeta && (
+              <p className="mt-4 text-[10px] font-mono text-slate-600">
+                {parseMeta.model} · {parseMeta.durationMs}ms
+                {parseMeta.fallbackUsed ? " · fallback" : ""}
+              </p>
+            )}
+          </Panel>
+
+          {/* Evaluation */}
+          {evaluation ? (
+            <Panel>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white">Fit Evaluation</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl font-bold text-white tabular-nums">
+                    {evaluation.fitScore}
+                  </span>
+                  <div className="text-right">
+                    <p className="text-[10px] text-slate-500">FIT</p>
+                    {evaluation.redFlagScore > 0 && (
+                      <p className="text-xs text-rose-400">⚠ {evaluation.redFlagScore}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <ScoreRow label="Fit" value={evaluation.fitScore} tone="success" />
+              <ScoreRow label="Red flags" value={evaluation.redFlagScore} tone="danger" className="mt-2" />
+
+              <div className="mt-4 space-y-3">
+                {evaluation.whyMatched.length > 0 && (
+                  <ReasonList label="Why matched" items={evaluation.whyMatched} tone="success" />
+                )}
+                {evaluation.whyNot.length > 0 && (
+                  <ReasonList label="Concerns" items={evaluation.whyNot} tone="warning" />
+                )}
+              </div>
+
+              {evaluation.strategicValue && (
+                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Strategic value</p>
+                  <p className="text-sm text-slate-300">{evaluation.strategicValue}</p>
+                </div>
+              )}
+
+              {evaluation.actionRecommendation && (
+                <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/8 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">Next action</p>
+                  <p className="text-sm text-slate-200">{evaluation.actionRecommendation}</p>
+                </div>
+              )}
+
+              {evalMeta && (
+                <p className="mt-4 text-[10px] font-mono text-slate-600">
+                  {evalMeta.model} · {evalMeta.durationMs}ms
+                  {evalMeta.fallbackUsed ? " · fallback" : ""}
+                </p>
+              )}
+            </Panel>
+          ) : evalApi.loading ? (
+            <Panel><LoadingState label="Evaluating fit…" /></Panel>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// SECTION 2 — Ranked Job Inbox
+// ============================================================
+
+function InboxSection({
+  jobs,
+  sources,
+  selectedJob,
+  onSelect,
+}: {
+  jobs: ReturnType<typeof useJobs>;
+  sources: string[];
+  selectedJob: EnrichedJob | null;
+  onSelect: (j: EnrichedJob | null) => void;
+}) {
+  const [filters, setFilters] = useState<JobFilters>(DEFAULT_FILTERS);
+  const [minFit, setMinFit] = useState(0);
+  const [remoteOnly, setRemoteOnly] = useState(false);
+
+  const sorted = useMemo(
+    () =>
+      [...jobs.ranked].sort(
+        (a, b) => (b.fit?.data?.fitScore ?? 0) - (a.fit?.data?.fitScore ?? 0)
+      ),
+    [jobs.ranked]
+  );
+
+  const filtered = useMemo(() => {
+    let list = applyFilters(sorted, filters);
+    if (minFit > 0) list = list.filter((j) => (j.fit?.data?.fitScore ?? 0) >= minFit);
+    if (remoteOnly) list = list.filter((j) => j.parsed?.data?.remoteType === "remote");
+    return list;
+  }, [sorted, filters, minFit, remoteOnly]);
+
+  if (jobs.loading) {
+    return <LoadingState label="Loading ranked jobs…" className="min-h-[300px]" />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <JobFilterBar
+          filters={filters}
+          onChange={setFilters}
+          availableSources={sources}
+          jobCount={filtered.length}
+          totalCount={sorted.length}
+        />
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
+          <select
+            className="input py-1.5 text-xs w-auto"
+            value={minFit}
+            onChange={(e) => setMinFit(Number(e.target.value))}
+          >
+            <option value={0}>Any fit</option>
+            <option value={40}>≥ 40</option>
+            <option value={55}>≥ 55</option>
+            <option value={70}>≥ 70</option>
+          </select>
+          <button
+            className={cn(
+              "btn btn-sm",
+              remoteOnly ? "btn-secondary" : "btn-ghost"
+            )}
+            onClick={() => setRemoteOnly((v) => !v)}
+          >
+            Remote only
+          </button>
+        </div>
+      </div>
+
+      {sorted.length === 0 ? (
+        <EmptyState
+          title="No ranked jobs yet"
+          description="Run the pipeline to pull jobs from enabled sources and evaluate fit."
+          action={<ActionButton variant="secondary" onClick={jobs.refresh}>Refresh</ActionButton>}
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="No jobs match filters"
+          description="Try loosening the fit threshold or clearing filters."
+          action={
+            <ActionButton variant="ghost" onClick={() => { setFilters(DEFAULT_FILTERS); setMinFit(0); setRemoteOnly(false); }}>
+              Clear filters
+            </ActionButton>
+          }
+        />
+      ) : (
+        <div
+          className={cn(
+            "grid gap-3",
+            selectedJob ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2"
+          )}
+        >
+          {filtered.map((job) => (
+            <RankedJobCard
+              key={job.id}
+              job={job}
+              selected={selectedJob?.id === job.id}
+              onSelect={onSelect}
+              onTrack={() => jobs.trackJob(job.id)}
+              onReject={() => jobs.rejectJob(job.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RankedJobCard({
+  job,
+  selected,
+  onSelect,
+  onTrack,
+  onReject,
+}: {
+  job: EnrichedJob;
+  selected?: boolean;
+  onSelect: (j: EnrichedJob) => void;
+  onTrack: () => void;
+  onReject: () => void;
+}) {
+  const parsed = job.parsed?.data;
+  const fit    = job.fit?.data;
+  const title  = parsed?.title  || job.raw.title;
+  const company = parsed?.company || job.raw.company;
+  const location = parsed?.location || job.raw.location;
+
+  const priorityDot = {
+    high:   "bg-emerald-400",
+    medium: "bg-amber-400",
+    low:    "bg-blue-400",
+    reject: "bg-rose-500",
+  }[fit?.priorityBand ?? "low"] ?? "bg-slate-400";
+
+  return (
+    <div
+      className={cn(
+        "card-hover group cursor-pointer transition-all",
+        selected && "border-white/25 bg-white/8"
+      )}
+      onClick={() => onSelect(job)}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex flex-col items-center gap-1.5 shrink-0 pt-0.5">
+          <span className={cn("h-2.5 w-2.5 rounded-full", priorityDot)} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                {parsed?.roleTrack && parsed.roleTrack !== "other" && (
+                  <span className="badge-neutral text-[9px]">
+                    {TRACK_LABELS[parsed.roleTrack] || parsed.roleTrack}
+                  </span>
+                )}
+                <span className="badge-neutral text-[9px]">{job.raw.source}</span>
+                {parsed?.remoteType === "remote" && (
+                  <span className="badge-accent text-[9px]">Remote</span>
+                )}
+                {parsed?.remoteType === "hybrid" && (
+                  <span className="badge-neutral text-[9px]">Hybrid</span>
+                )}
+              </div>
+              <h3 className="text-sm font-semibold text-white leading-tight">{title}</h3>
+              <p className="text-xs text-slate-500 mt-0.5">{company}{location ? ` · ${location}` : ""}</p>
+            </div>
+
+            {fit && (
+              <div className="flex flex-col items-end shrink-0 gap-0.5">
+                <span className={cn(
+                  "text-2xl font-bold tabular-nums leading-none",
+                  fit.fitScore >= 70 ? "text-emerald-300"
+                  : fit.fitScore >= 50 ? "text-amber-300"
+                  : "text-slate-400"
+                )}>
+                  {fit.fitScore}
+                </span>
+                {fit.redFlagScore > 25 && (
+                  <span className="text-[10px] font-semibold text-rose-400">
+                    ⚠ {fit.redFlagScore}
+                  </span>
+                )}
+                {parsed?.salaryText && (
+                  <span className="text-[10px] text-slate-600 mt-1 text-right max-w-[80px] truncate">
+                    {parsed.salaryText}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {fit?.strategicValue && (
+            <p className="mt-2 text-xs text-slate-500 italic line-clamp-1">{fit.strategicValue}</p>
+          )}
+
+          {fit?.whyMatched?.length ? (
+            <div className="mt-2 space-y-1">
+              {fit.whyMatched.slice(0, 2).map((r, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <Check size={11} className="text-emerald-400 mt-0.5 shrink-0" />
+                  <span className="text-[11px] text-slate-400 leading-4">{r}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {fit?.whyNot?.[0] && (
+            <div className="flex items-start gap-1.5 mt-1">
+              <AlertTriangle size={11} className="text-amber-400 mt-0.5 shrink-0" />
+              <span className="text-[11px] text-slate-500 leading-4">{fit.whyNot[0]}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 border-t border-white/8 pt-3">
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={(e) => { e.stopPropagation(); onTrack(); }}
+        >
+          <Plus size={12} /> Track
+        </button>
+        <button
+          className="btn btn-ghost btn-sm text-rose-400 hover:text-rose-300"
+          onClick={(e) => { e.stopPropagation(); onReject(); }}
+        >
+          <X size={12} /> Reject
+        </button>
+        {job.raw.link && (
+          <a
+            href={job.raw.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost btn-sm ml-auto text-slate-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ExternalLink size={12} />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// SECTION 3 — Tracked Pipeline
+// ============================================================
+
+const STAGE_ORDER: ReturnType<typeof useJobs>["tracked"][0]["status"][] = [
+  "tracked", "applied", "inbox", "archived", "rejected",
+];
+const STAGE_LABELS: Record<string, string> = {
+  tracked:  "Shortlisted",
+  applied:  "Applied",
+  inbox:    "Inbox",
+  archived: "Archived",
+  rejected: "Rejected",
+};
+
+function PipelineSection({
+  jobs,
+  selectedJob,
+  onSelect,
+}: {
+  jobs: ReturnType<typeof useJobs>;
+  selectedJob: EnrichedJob | null;
+  onSelect: (j: EnrichedJob | null) => void;
+}) {
+  const [stageFilter, setStageFilter] = useState<string>("all");
+
+  const all = useMemo(
+    () =>
+      [...jobs.tracked, ...jobs.inbox, jobs.rejected].flat()
+        .filter((j, i, arr) => arr.findIndex((x) => x.id === j.id) === i)
+        .sort((a, b) => (b.fit?.data?.fitScore ?? 0) - (a.fit?.data?.fitScore ?? 0)),
+    [jobs.tracked, jobs.inbox, jobs.rejected]
+  );
+
+  const filtered = useMemo(
+    () => stageFilter === "all" ? all : all.filter((j) => j.status === stageFilter),
+    [all, stageFilter]
+  );
+
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: all.length };
+    for (const j of all) counts[j.status] = (counts[j.status] ?? 0) + 1;
+    return counts;
+  }, [all]);
+
+  if (jobs.loading) return <LoadingState label="Loading pipeline…" className="min-h-[300px]" />;
+
+  return (
+    <div className="space-y-4">
+      <SysFilterBar
+        options={[
+          { value: "all",      label: "All",         count: stageCounts.all ?? 0 },
+          { value: "tracked",  label: "Shortlisted",  count: stageCounts.tracked ?? 0 },
+          { value: "applied",  label: "Applied",      count: stageCounts.applied ?? 0 },
+          { value: "inbox",    label: "Inbox",        count: stageCounts.inbox ?? 0 },
+          { value: "rejected", label: "Rejected",     count: stageCounts.rejected ?? 0 },
+        ]}
+        value={stageFilter}
+        onChange={setStageFilter}
+      />
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title="No jobs in this stage"
+          description="Track a ranked job to start managing your pipeline."
+        />
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((job) => (
+            <TrackedJobRow
+              key={job.id}
+              job={job}
+              selected={selectedJob?.id === job.id}
+              onSelect={() => onSelect(selectedJob?.id === job.id ? null : job)}
+              onApply={() => jobs.markApplied(job.id)}
+              onUnreject={() => jobs.unrejectJob(job.id)}
+              onReject={() => jobs.rejectJob(job.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrackedJobRow({
+  job,
+  selected,
+  onSelect,
+  onApply,
+  onUnreject,
+  onReject,
+}: {
+  job: EnrichedJob;
+  selected?: boolean;
+  onSelect: () => void;
+  onApply: () => void;
+  onUnreject: () => void;
+  onReject: () => void;
+}) {
+  const parsed  = job.parsed?.data;
+  const fit     = job.fit?.data;
+  const title   = parsed?.title   || job.raw.title;
+  const company = parsed?.company || job.raw.company;
+
+  return (
+    <div
+      className={cn(
+        "card-hover group cursor-pointer flex items-center gap-4",
+        selected && "border-white/25 bg-white/8"
+      )}
+      onClick={onSelect}
+    >
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <span className={cn("h-2 w-2 rounded-full", STAGE_DOT[job.status] ?? "bg-slate-500")} />
+        <span className="text-[9px] uppercase tracking-wider text-slate-600 whitespace-nowrap">
+          {STAGE_LABELS[job.status] || job.status}
+        </span>
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-white truncate">{title}</p>
+        <p className="text-xs text-slate-500 truncate">
+          {company}
+          {parsed?.roleTrack && parsed.roleTrack !== "other"
+            ? ` · ${TRACK_LABELS[parsed.roleTrack] || parsed.roleTrack}`
+            : ""}
+        </p>
+        {fit?.actionRecommendation && (
+          <p className="text-[11px] text-slate-600 mt-0.5 truncate">
+            → {fit.actionRecommendation}
+          </p>
+        )}
+      </div>
+
+      {fit && (
+        <div className="flex flex-col items-end shrink-0 gap-0.5">
+          <span className={cn(
+            "text-base font-bold tabular-nums",
+            fit.fitScore >= 70 ? "text-emerald-300"
+            : fit.fitScore >= 50 ? "text-amber-300"
+            : "text-slate-500"
+          )}>
+            {fit.fitScore}
+          </span>
+          <PriorityChip band={fit.priorityBand} className="text-[9px] py-0.5 px-2" />
+        </div>
+      )}
+
+      <div
+        className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {job.status !== "applied" && (
+          <button className="btn btn-ghost btn-sm text-violet-400" onClick={onApply} title="Mark applied">
+            <Check size={13} />
+          </button>
+        )}
+        {job.status === "rejected" ? (
+          <button className="btn btn-ghost btn-sm text-slate-400" onClick={onUnreject} title="Unreject">
+            <RefreshCw size={13} />
+          </button>
+        ) : (
+          <button className="btn btn-ghost btn-sm text-rose-400" onClick={onReject} title="Reject">
+            <X size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Career Tools Cluster (detail rail supplement)
+// ============================================================
+
+const TOOLS = [
+  { label: "Cover Letter",   href: "/career?tool=cover-letter",   icon: FileText  },
+  { label: "Interview Prep", href: "/career?tool=interview",       icon: Brain     },
+  { label: "Skill Gap",      href: "/career?tool=skill-gap",       icon: Target    },
+  { label: "Salary",         href: "/career?tool=salary",          icon: TrendingUp },
+  { label: "CV Optimizer",   href: "/career?tool=cv",              icon: Briefcase },
+  { label: "Contacts",       href: "/career?tool=contacts",        icon: Users     },
+];
+
+function CareerToolsCluster({ job }: { job: EnrichedJob }) {
+  const [expanded, setExpanded] = useState(false);
+  const title = job.parsed?.data?.title || job.raw.title;
+
+  return (
+    <Panel tone="subtle">
+      <button
+        className="flex w-full items-center justify-between text-left"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Career Tools
+        </span>
+        <ChevronDown
+          size={14}
+          className={cn("text-slate-600 transition-transform", expanded && "rotate-180")}
+        />
+      </button>
+
+      {expanded && (
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          {TOOLS.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <a
+                key={tool.label}
+                href={tool.href}
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-medium text-slate-400 transition-all hover:border-white/20 hover:text-white"
+              >
+                <Icon size={13} className="shrink-0" />
+                {tool.label}
+              </a>
+            );
+          })}
+        </div>
+      )}
+
+      {expanded && (
+        <p className="mt-2 text-[10px] text-slate-600">For: {title}</p>
+      )}
+    </Panel>
+  );
+}
+
+// ============================================================
+// Shared micro-components
+// ============================================================
+
+function PhaseChip({ phase }: { phase: "idle" | "parsing" | "evaluating" | "done" | "error" }) {
+  if (phase === "idle") return null;
+  const map = {
+    parsing:    { tone: "info"    as const, label: "Parsing…" },
+    evaluating: { tone: "info"    as const, label: "Evaluating…" },
+    done:       { tone: "success" as const, label: "Done" },
+    error:      { tone: "danger"  as const, label: "Failed" },
+  };
+  const { tone, label } = map[phase];
+  return <StatusChip tone={tone}>{label}</StatusChip>;
+}
+
+function PriorityChip({ band, className }: { band?: string; className?: string }) {
+  if (!band) return null;
+  const cfg = PRIORITY_CHIP[band];
+  if (!cfg) return null;
+  return (
+    <StatusChip tone={cfg.tone} className={className}>
+      {cfg.label}
+    </StatusChip>
+  );
+}
+
+function ScoreRow({
+  label,
+  value,
+  tone,
+  className,
+}: {
+  label: string;
+  value: number;
+  tone: "success" | "danger" | "info" | "warning" | "neutral";
+  className?: string;
+}) {
+  const barColor = {
+    success: "bg-emerald-400",
+    danger:  "bg-rose-400",
+    info:    "bg-blue-400",
+    warning: "bg-amber-400",
+    neutral: "bg-slate-400",
+  }[tone];
+  return (
+    <div className={cn("space-y-1", className)}>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-slate-500">{label}</span>
+        <span className="text-xs font-mono text-slate-300">{value}</span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-white/10">
+        <div className={cn("h-full rounded-full", barColor)} style={{ width: `${Math.min(value, 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function RequirementList({
+  label,
+  items,
+  tone,
+}: {
+  label: string;
+  items: string[];
+  tone: "success" | "danger" | "neutral";
+}) {
+  const dotColor = { success: "text-emerald-400", danger: "text-rose-400", neutral: "text-slate-500" }[tone];
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wider text-slate-600 mb-1.5">{label}</p>
+      <ul className="space-y-1">
+        {items.map((item, i) => (
+          <li key={i} className="flex items-start gap-1.5">
+            <span className={cn("mt-0.5 shrink-0 text-[10px]", dotColor)}>
+              {tone === "success" ? "✓" : tone === "danger" ? "!" : "·"}
+            </span>
+            <span className="text-xs text-slate-400 leading-4">{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReasonList({
+  label,
+  items,
+  tone,
+}: {
+  label: string;
+  items: string[];
+  tone: "success" | "warning";
+}) {
+  const Icon = tone === "success" ? Check : AlertTriangle;
+  const iconClass = tone === "success" ? "text-emerald-400" : "text-amber-400";
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wider text-slate-600 mb-1.5">{label}</p>
+      <div className="space-y-1">
+        {items.map((item, i) => (
+          <div key={i} className="flex items-start gap-1.5">
+            <Icon size={11} className={cn("mt-0.5 shrink-0", iconClass)} />
+            <span className="text-xs text-slate-400 leading-4">{item}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
