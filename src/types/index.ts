@@ -9,9 +9,12 @@ export type Score = number;
 export type TaskStatus = "idle" | "running" | "success" | "skipped" | "failed";
 export type UserJobStatus =
   | "inbox"
+  | "shortlisted"
   | "tracked"
-  | "rejected"
   | "applied"
+  | "interview"
+  | "offer"
+  | "rejected"
   | "archived";
 export type PriorityBand = "high" | "medium" | "low" | "reject";
 export type RemoteType = "remote" | "hybrid" | "onsite" | "unknown";
@@ -184,6 +187,7 @@ export interface JobFitEvaluation {
   strategicValue: string;
   likelyInterviewability: string;
   actionRecommendation: string;
+  visaRisk?: { level: "none" | "low" | "medium" | "high"; reason: string };
   confidence: Confidence;
 }
 
@@ -200,6 +204,9 @@ export interface EnrichedJob extends Timestamped {
   companyIntel?: CompanyIntel | null;
   decisionMakers?: DecisionMaker[];
   outreachStrategy?: OutreachStrategy | null;
+  followUpDate?: Timestamp | null;
+  followUpNote?: string | null;
+  stageChangedAt?: Timestamp | null;
 }
 
 export interface FollowUpPlan {

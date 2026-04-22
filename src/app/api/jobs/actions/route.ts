@@ -6,6 +6,9 @@ import {
   trackJob,
   updateStoredJob,
   unrejectJob,
+  changeStage,
+  setFollowUp,
+  updateJobNotes,
 } from "@/lib/jobs/storage";
 import { requireAppUser } from "@/lib/auth/session";
 import { buildContactStrategy } from "@/lib/enrichment";
@@ -135,7 +138,14 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireAppUser();
     const body = await request.json();
-    const { action, id } = body as { action?: string; id?: string };
+    const { action, id, status, followUpDate, followUpNote, notes } = body as {
+      action?: string;
+      id?: string;
+      status?: string;
+      followUpDate?: string;
+      followUpNote?: string;
+      notes?: string;
+    };
 
     if (!action || !id) {
       return NextResponse.json(
@@ -165,6 +175,18 @@ export async function POST(request: NextRequest) {
       case "rerun-parse":
       case "rerun-fit":
         success = await refreshJobEnrichment(id, user.id, action);
+        break;
+      case "change-stage":
+        if (!status) {
+          return NextResponse.json({ error: "status is required for change-stage" }, { status: 400 });
+        }
+        success = await changeStage(id, status as any, user.id);
+        break;
+      case "set-followup":
+        success = await setFollowUp(id, followUpDate || null, followUpNote || null, user.id);
+        break;
+      case "update-notes":
+        success = await updateJobNotes(id, notes || "", user.id);
         break;
       default:
         return NextResponse.json(

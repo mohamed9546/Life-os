@@ -93,6 +93,26 @@ export function useJobs() {
     [refresh]
   );
 
+  const performActionWithPayload = useCallback(
+    async (action: string, id: string, extra?: Record<string, unknown>) => {
+      const response = await fetch("/api/jobs/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, id, ...extra }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error || `Job action failed: ${action}`);
+      }
+
+      await refresh();
+    },
+    [refresh]
+  );
+
   return {
     ...state,
     refresh,
@@ -100,6 +120,12 @@ export function useJobs() {
     rejectJob: (id: string) => performAction("reject", id),
     unrejectJob: (id: string) => performAction("unreject", id),
     markApplied: (id: string) => performAction("apply", id),
+    changeStage: (id: string, status: string) =>
+      performActionWithPayload("change-stage", id, { status }),
+    setFollowUp: (id: string, followUpDate: string | null, followUpNote: string | null) =>
+      performActionWithPayload("set-followup", id, { followUpDate, followUpNote }),
+    updateNotes: (id: string, notes: string) =>
+      performActionWithPayload("update-notes", id, { notes }),
     refreshJobIntel: (id: string) => performAction("refresh-intel", id),
     refreshJobContacts: (id: string) => performAction("refresh-contacts", id),
     refreshJobOutreach: (id: string) => performAction("refresh-outreach", id),

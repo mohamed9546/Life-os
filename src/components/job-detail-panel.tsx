@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { EnrichedJob } from "@/types";
+import { useApi } from "@/hooks/use-api";
+import { cn } from "@/lib/utils";
 import { PriorityBadge } from "./priority-badge";
 import { ScoreBar } from "./score-bar";
 import {
@@ -182,6 +184,25 @@ export function JobDetailPanel({
                   : "bg-success"
             }
           />
+        </div>
+      )}
+
+      {fit?.visaRisk && fit.visaRisk.level !== "none" && (
+        <div className={cn(
+          "rounded-lg px-4 py-3 mb-5",
+          fit.visaRisk.level === "high" ? "bg-rose-400/10 border border-rose-400/20"
+          : fit.visaRisk.level === "medium" ? "bg-amber-400/10 border border-amber-400/20"
+          : "bg-blue-400/10 border border-blue-400/20"
+        )}>
+          <p className={cn(
+            "text-xs font-semibold mb-1",
+            fit.visaRisk.level === "high" ? "text-rose-300"
+            : fit.visaRisk.level === "medium" ? "text-amber-300"
+            : "text-blue-300"
+          )}>
+            Visa Risk: {fit.visaRisk.level.charAt(0).toUpperCase() + fit.visaRisk.level.slice(1)}
+          </p>
+          <p className="text-sm text-text-secondary">{fit.visaRisk.reason}</p>
         </div>
       )}
 
@@ -646,6 +667,9 @@ export function JobDetailPanel({
         )}
         </div>
       </div>
+
+      {/* Inline Career Tools */}
+      <CareerToolTabs job={job} />
     </div>
   );
 }
@@ -725,12 +749,16 @@ function SourceChip({ source }: { source: string }) {
   );
 }
 
+
 function StatusChip({ status }: { status: string }) {
   const colors: Record<string, string> = {
     inbox: "bg-accent/10 text-accent",
+    shortlisted: "bg-indigo-500/10 text-indigo-400",
     tracked: "bg-success/10 text-success",
     rejected: "bg-danger/10 text-danger",
     applied: "bg-info/10 text-info",
+    interview: "bg-amber-500/10 text-amber-400",
+    offer: "bg-emerald-500/10 text-emerald-400",
     archived: "bg-gray-500/10 text-gray-400",
   };
 
@@ -755,4 +783,175 @@ function formatDate(dateStr: string): string {
   } catch {
     return "";
   }
+}
+
+// ============================================================
+// Inline Career Tools — Tabbed Execution Panel
+// ============================================================
+
+type ToolTab = "cover-letter" | "interview-prep" | "skill-gap" | "salary";
+
+const TOOL_TABS: { id: ToolTab; label: string; endpoint: string }[] = [
+  { id: "cover-letter",  label: "Cover Letter",   endpoint: "/api/career/cover-letter" },
+  { id: "interview-prep", label: "Interview Prep", endpoint: "/api/career/interview-prep" },
+  { id: "skill-gap",     label: "Skill Gap",       endpoint: "/api/career/skill-gap" },
+  { id: "salary",        label: "Salary",          endpoint: "/api/career/salary" },
+];
+
+function CareerToolTabs({ job }: { job: EnrichedJob }) {
+  const [activeTab, setActiveTab] = useState<ToolTab | null>(null);
+  const [results, setResults] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const parsed = job.parsed?.data;
+  const title = parsed?.title || job.raw.title;
+  const company = parsed?.company || job.raw.company;
+
+  const runTool = useCallback(async (tab: ToolTab) => {
+    const toolConfig = TOOL_TABS.find((t) => t.id === tab);
+    if (!toolConfig || !parsed) return;
+
+    setLoading((prev) => ({ ...prev, [tab]: true }));
+    setErrors((prev) => ({ ...prev, [tab]: "" }));
+
+    try {
+      const response = await fetch(toolConfig.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobTitle: title,
+          company: company,
+          description: job.raw.description || parsed.summary || "",
+          mustHaves: parsed.mustHaves || [],
+          niceToHaves: parsed.niceToHaves || [],
+          keywords: parsed.keywords || [],
+          roleTrack: parsed.roleTrack,
+          location: parsed.location,
+          salaryText: parsed.salaryText,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error((data as any)?.error || `${toolConfig.label} generation failed`);
+      }
+
+      const data = await response.json();
+      const result = data.result || data.content || data.output || JSON.stringify(data, null, 2);
+      setResults((prev) => ({ ...prev, [tab]: result }));
+    } catch (err) {
+      setErrors((prev) => ({
+        ...prev,
+        [tab]: err instanceof Error ? err.message : "Tool failed",
+      }));
+    } finally {
+      setLoading((prev) => ({ ...prev, [tab]: false }));
+    }
+  }, [parsed, title, company, job.raw.description]);
+
+  if (!parsed) return null;
+
+  return (
+    <div className="border-t border-surface-3 pt-4 mt-2">
+      <p className="text-2xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">
+        Career Assistant
+      </p>
+
+      {/* Tab bar */}
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {TOOL_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`px-2.5 py-1.5 rounded-lg text-2xs font-medium transition-all ${
+              activeTab === tab.id
+                ? "bg-accent/15 text-accent border border-accent/25"
+                : "bg-surface-2 text-text-tertiary hover:text-text-primary hover:bg-surface-3 border border-transparent"
+            }`}
+            onClick={() => {
+              setActiveTab(activeTab === tab.id ? null : tab.id);
+            }}
+          >
+            {tab.label}
+            {results[tab.id] && <span className="ml-1 text-success">✓</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Active tab content */}
+      {activeTab && (() => {
+        const tab = TOOL_TABS.find((t) => t.id === activeTab)!;
+        const result = results[activeTab];
+        const isLoading = loading[activeTab];
+        const error = errors[activeTab];
+
+        return (
+          <div className="rounded-lg bg-surface-2 border border-surface-3 p-3 animate-fade-in">
+            {!result && !isLoading && !error && (
+              <div className="text-center py-4">
+                <p className="text-xs text-text-secondary mb-3">
+                  Generate {tab.label.toLowerCase()} for <strong className="text-text-primary">{title}</strong> at {company}
+                </p>
+                <button
+                  className="btn-primary btn-sm"
+                  onClick={() => void runTool(activeTab)}
+                >
+                  Generate {tab.label}
+                </button>
+              </div>
+            )}
+
+            {isLoading && (
+              <div className="text-center py-6">
+                <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent mb-2" />
+                <p className="text-xs text-text-secondary">
+                  Generating {tab.label.toLowerCase()}…
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="py-3">
+                <p className="text-xs text-danger mb-2">{error}</p>
+                <button
+                  className="btn-ghost btn-sm text-xs"
+                  onClick={() => void runTool(activeTab)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {result && (
+              <div>
+                <div className="max-h-64 overflow-y-auto">
+                  <p className="text-xs text-text-secondary whitespace-pre-wrap leading-relaxed">
+                    {result}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-surface-3">
+                  <button
+                    className="btn-ghost btn-sm text-2xs"
+                    onClick={() => void navigator.clipboard.writeText(result)}
+                  >
+                    Copy
+                  </button>
+                  <button
+                    className="btn-ghost btn-sm text-2xs"
+                    onClick={() => void runTool(activeTab)}
+                    disabled={isLoading}
+                  >
+                    Regenerate
+                  </button>
+                  <span className="text-2xs text-text-tertiary ml-auto">
+                    {result.length} chars
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
 }

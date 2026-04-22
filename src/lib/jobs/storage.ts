@@ -58,6 +58,9 @@ function mapDbJob(row: any): EnrichedJob {
     dedupeKey: row.dedupe_key,
     sourceQueryId: row.source_query_id || null,
     userId: row.user_id,
+    followUpDate: row.follow_up_date || null,
+    followUpNote: row.follow_up_note || null,
+    stageChangedAt: row.stage_changed_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -78,6 +81,9 @@ function mapJobForDb(userId: string, job: EnrichedJob) {
     fit: job.fit,
     user_notes: job.userNotes || null,
     source_query_id: job.sourceQueryId || null,
+    follow_up_date: job.followUpDate || null,
+    follow_up_note: job.followUpNote || null,
+    stage_changed_at: job.stageChangedAt || null,
     created_at: job.createdAt,
     updated_at: job.updatedAt,
   };
@@ -324,14 +330,14 @@ export async function overwriteRawJobs(
 
 export async function getEnrichedJobs(userId?: string): Promise<EnrichedJob[]> {
   const actorId = await resolveActorId(userId);
-  const dbJobs = await readDbJobs(actorId, ["tracked", "applied", "archived"]);
+  const dbJobs = await readDbJobs(actorId, ["shortlisted", "tracked", "applied", "interview", "offer", "archived"]);
   if (dbJobs) {
     return mergeJobIntel(actorId, dbJobs);
   }
   const jobs = await readFallbackMergedJobs(actorId);
   return mergeJobIntel(
     actorId,
-    jobs.filter((job) => ["tracked", "applied", "archived"].includes(job.status))
+    jobs.filter((job) => ["shortlisted", "tracked", "applied", "interview", "offer", "archived"].includes(job.status))
   );
 }
 
@@ -359,7 +365,7 @@ export async function overwriteEnrichedJobs(
 ): Promise<void> {
   const actorId = await resolveActorId(userId);
   await persistFallbackJobIntel(actorId, jobs);
-  const dbResult = await replaceDbJobsByStatus(actorId, ["tracked", "applied", "archived"], jobs);
+  const dbResult = await replaceDbJobsByStatus(actorId, ["shortlisted", "tracked", "applied", "interview", "offer", "archived"], jobs);
   if (dbResult) {
     return;
   }
@@ -460,7 +466,7 @@ export async function getRankedJobs(userId?: string): Promise<EnrichedJob[]> {
   }
 
   const ranked = (await readFallbackMergedJobs(actorId)).filter((job) =>
-    ["inbox", "tracked", "applied"].includes(job.status)
+    ["inbox", "shortlisted", "tracked", "applied", "interview", "offer"].includes(job.status)
   );
   return sortByFitScore(await mergeJobIntel(actorId, ranked));
 }
@@ -623,6 +629,81 @@ export async function unrejectJob(id: string, userId?: string): Promise<boolean>
 
 export async function markApplied(id: string, userId?: string): Promise<boolean> {
   return updateJobStatus(id, "applied", userId);
+}
+
+export async function changeStage(id: string, status: UserJobStatus, userId?: string): Promise<boolean> {
+  const actorId = await resolveActorId(userId);
+  const supabase = getSupabase();
+  const now = new Date().toISOString();
+
+  if (supabase) {
+    const { data } = await supabase
+      .from("jobs")
+      .update({ status, stage_changed_at: now, updated_at: now })
+      .eq("user_id", actorId)
+      .eq("id", id)
+      .select("id");
+    return Boolean(data && data.length > 0);
+  }
+
+  return updateStoredJob(
+    id,
+    (job) => ({ ...job, status, stageChangedAt: now, updatedAt: now }),
+    actorId
+  );
+}
+
+export async function setFollowUp(
+  id: string,
+  followUpDate: string | null,
+  followUpNote: string | null,
+  userId?: string
+): Promise<boolean> {
+  const actorId = await resolveActorId(userId);
+  const now = new Date().toISOString();
+  const supabase = getSupabase();
+
+  if (supabase) {
+    const { data } = await supabase
+      .from("jobs")
+      .update({ follow_up_date: followUpDate, follow_up_note: followUpNote, updated_at: now })
+      .eq("user_id", actorId)
+      .eq("id", id)
+      .select("id");
+    return Boolean(data && data.length > 0);
+  }
+
+  return updateStoredJob(
+    id,
+    (job) => ({ ...job, followUpDate, followUpNote, updatedAt: now }),
+    actorId
+  );
+}
+
+export async function updateJobNotes(
+  id: string,
+  notes: string,
+  userId?: string
+): Promise<boolean> {
+  const actorId = await resolveActorId(userId);
+  const now = new Date().toISOString();
+  const supabase = getSupabase();
+
+  if (supabase) {
+    const { data } = await supabase
+      .from("jobs")
+      .update({ user_notes: notes, updated_at: now })
+      .eq("user_id", actorId)
+      .eq("id", id)
+      .select("id");
+    return Boolean(data && data.length > 0);
+  }
+
+  return updateStoredJob(
+    id,
+    (job) => ({ ...job, userNotes: notes, updatedAt: now }),
+    actorId
+  );
 }
 
 export async function getAllDedupeKeys(userId?: string): Promise<Set<string>> {

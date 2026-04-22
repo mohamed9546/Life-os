@@ -42,11 +42,14 @@ const PRIORITY_CHIP: Record<string, { tone: "success" | "warning" | "info" | "da
 };
 
 const STAGE_DOT: Record<string, string> = {
-  inbox:    "bg-slate-500",
-  tracked:  "bg-blue-400",
-  applied:  "bg-violet-400",
-  rejected: "bg-rose-400",
-  archived: "bg-slate-600",
+  inbox:       "bg-slate-500",
+  shortlisted: "bg-indigo-400",
+  tracked:     "bg-blue-400",
+  applied:     "bg-violet-400",
+  interview:   "bg-amber-400",
+  offer:       "bg-emerald-400",
+  rejected:    "bg-rose-400",
+  archived:    "bg-slate-600",
 };
 
 const TRACK_LABELS: Record<string, string> = {
@@ -83,7 +86,15 @@ export function CareerDashboard() {
       (j) => j.fit?.data?.priorityBand === "high"
     ).length;
     const applied = jobs.tracked.filter((j) => j.status === "applied").length;
-    return { avgFit, highPriority, applied };
+    const interviews = jobs.tracked.filter((j) => j.status === "interview").length;
+    const followUpsDue = [...jobs.tracked, ...jobs.ranked].filter((j) => {
+      if (!j.followUpDate) return false;
+      return new Date(j.followUpDate) <= new Date();
+    }).length;
+    const visaRiskCount = ranked.filter(
+      (j) => j.fit?.data?.visaRisk?.level === "high" || j.fit?.data?.visaRisk?.level === "medium"
+    ).length;
+    return { avgFit, highPriority, applied, interviews, followUpsDue, visaRiskCount };
   }, [jobs.ranked, jobs.tracked]);
 
   const allSources = useMemo(() => {
@@ -100,13 +111,15 @@ export function CareerDashboard() {
       <CareerHero jobs={jobs} pipeline={pipeline} />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
         <KpiCell label="Ranked Inbox"   value={jobs.ranked.length}  tone="info" />
         <KpiCell label="Tracked"        value={jobs.tracked.length} tone="success" />
         <KpiCell label="Avg Fit"        value={`${kpis.avgFit}`}    tone={kpis.avgFit >= 60 ? "success" : "neutral"} />
         <KpiCell label="High Priority"  value={kpis.highPriority}   tone={kpis.highPriority > 0 ? "warning" : "neutral"} />
         <KpiCell label="Applied"        value={kpis.applied}        tone="info" />
-        <KpiCell label="Total Active"   value={jobs.inbox.length + jobs.ranked.length + jobs.tracked.length} />
+        <KpiCell label="Interviews"     value={kpis.interviews}     tone={kpis.interviews > 0 ? "warning" : "neutral"} />
+        <KpiCell label="Follow-ups Due" value={kpis.followUpsDue}   tone={kpis.followUpsDue > 0 ? "danger" : "neutral"} />
+        <KpiCell label="Visa Risk"      value={kpis.visaRiskCount}  tone={kpis.visaRiskCount > 0 ? "danger" : "neutral"} />
       </div>
 
       {/* Pipeline result banner */}
@@ -586,6 +599,7 @@ function InboxSection({
   const [filters, setFilters] = useState<JobFilters>(DEFAULT_FILTERS);
   const [minFit, setMinFit] = useState(0);
   const [remoteOnly, setRemoteOnly] = useState(false);
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
 
   const sorted = useMemo(
     () =>
@@ -599,8 +613,9 @@ function InboxSection({
     let list = applyFilters(sorted, filters);
     if (minFit > 0) list = list.filter((j) => (j.fit?.data?.fitScore ?? 0) >= minFit);
     if (remoteOnly) list = list.filter((j) => j.parsed?.data?.remoteType === "remote");
+    if (priorityFilter !== "all") list = list.filter((j) => j.fit?.data?.priorityBand === priorityFilter);
     return list;
-  }, [sorted, filters, minFit, remoteOnly]);
+  }, [sorted, filters, minFit, remoteOnly, priorityFilter]);
 
   if (jobs.loading) {
     return <LoadingState label="Loading ranked jobs…" className="min-h-[300px]" />;
@@ -617,6 +632,16 @@ function InboxSection({
           totalCount={sorted.length}
         />
         <div className="flex items-center gap-2 ml-auto flex-wrap">
+          <select
+            className="input py-1.5 text-xs w-auto"
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+          >
+            <option value="all">Any priority</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
           <select
             className="input py-1.5 text-xs w-auto"
             value={minFit}
@@ -650,7 +675,7 @@ function InboxSection({
           title="No jobs match filters"
           description="Try loosening the fit threshold or clearing filters."
           action={
-            <ActionButton variant="ghost" onClick={() => { setFilters(DEFAULT_FILTERS); setMinFit(0); setRemoteOnly(false); }}>
+            <ActionButton variant="ghost" onClick={() => { setFilters(DEFAULT_FILTERS); setMinFit(0); setRemoteOnly(false); setPriorityFilter("all"); }}>
               Clear filters
             </ActionButton>
           }
@@ -753,6 +778,16 @@ function RankedJobCard({
                     ⚠ {fit.redFlagScore}
                   </span>
                 )}
+                {fit.visaRisk && fit.visaRisk.level !== "none" && (
+                  <span className={cn(
+                    "text-[9px] font-semibold px-1.5 py-0.5 rounded-full",
+                    fit.visaRisk.level === "high" ? "bg-rose-400/15 text-rose-300"
+                    : fit.visaRisk.level === "medium" ? "bg-amber-400/15 text-amber-300"
+                    : "bg-blue-400/15 text-blue-300"
+                  )}>
+                    Visa {fit.visaRisk.level}
+                  </span>
+                )}
                 {parsed?.salaryText && (
                   <span className="text-[10px] text-slate-600 mt-1 text-right max-w-[80px] truncate">
                     {parsed.salaryText}
@@ -820,14 +855,17 @@ function RankedJobCard({
 // ============================================================
 
 const STAGE_ORDER: ReturnType<typeof useJobs>["tracked"][0]["status"][] = [
-  "tracked", "applied", "inbox", "archived", "rejected",
+  "shortlisted", "tracked", "applied", "interview", "offer", "inbox", "archived", "rejected",
 ];
 const STAGE_LABELS: Record<string, string> = {
-  tracked:  "Shortlisted",
-  applied:  "Applied",
-  inbox:    "Inbox",
-  archived: "Archived",
-  rejected: "Rejected",
+  shortlisted: "Shortlisted",
+  tracked:     "Tracked",
+  applied:     "Applied",
+  interview:   "Interview",
+  offer:       "Offer",
+  inbox:       "Inbox",
+  archived:    "Archived",
+  rejected:    "Rejected",
 };
 
 function PipelineSection({
@@ -866,11 +904,14 @@ function PipelineSection({
     <div className="space-y-4">
       <SysFilterBar
         options={[
-          { value: "all",      label: "All",         count: stageCounts.all ?? 0 },
-          { value: "tracked",  label: "Shortlisted",  count: stageCounts.tracked ?? 0 },
-          { value: "applied",  label: "Applied",      count: stageCounts.applied ?? 0 },
-          { value: "inbox",    label: "Inbox",        count: stageCounts.inbox ?? 0 },
-          { value: "rejected", label: "Rejected",     count: stageCounts.rejected ?? 0 },
+          { value: "all",         label: "All",         count: stageCounts.all ?? 0 },
+          { value: "shortlisted", label: "Shortlisted", count: stageCounts.shortlisted ?? 0 },
+          { value: "tracked",     label: "Tracked",     count: stageCounts.tracked ?? 0 },
+          { value: "applied",     label: "Applied",     count: stageCounts.applied ?? 0 },
+          { value: "interview",   label: "Interview",   count: stageCounts.interview ?? 0 },
+          { value: "offer",       label: "Offer",       count: stageCounts.offer ?? 0 },
+          { value: "inbox",       label: "Inbox",       count: stageCounts.inbox ?? 0 },
+          { value: "rejected",    label: "Rejected",    count: stageCounts.rejected ?? 0 },
         ]}
         value={stageFilter}
         onChange={setStageFilter}
@@ -946,6 +987,14 @@ function TrackedJobRow({
         {fit?.actionRecommendation && (
           <p className="text-[11px] text-slate-600 mt-0.5 truncate">
             → {fit.actionRecommendation}
+          </p>
+        )}
+        {job.followUpDate && (
+          <p className={cn(
+            "text-[10px] mt-0.5 font-medium",
+            new Date(job.followUpDate) <= new Date() ? "text-rose-400" : "text-slate-500"
+          )}>
+            Follow-up: {new Date(job.followUpDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
           </p>
         )}
       </div>
