@@ -1,25 +1,45 @@
 // ============================================================
 // Local JSON file storage layer.
-// All data persists to /data/*.json files.
-// Designed as a clean abstraction that can be swapped to
-// SQLite or Postgres later without changing consumers.
+// On Cloud Run (read-only FS), uses /tmp/data as fallback.
+// When Supabase is configured, this layer is mostly bypassed.
 // ============================================================
 
 import { promises as fs } from "fs";
 import path from "path";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// Cloud Run has a read-only filesystem except /tmp.
+const PRIMARY_DATA_DIR = path.join(process.cwd(), "data");
+const FALLBACK_DATA_DIR = "/tmp/data";
+let resolvedDataDir: string | null = null;
 
-async function ensureDataDir(): Promise<void> {
+async function getDataDir(): Promise<string> {
+  if (resolvedDataDir) return resolvedDataDir;
+
   try {
-    await fs.access(DATA_DIR);
+    await fs.mkdir(PRIMARY_DATA_DIR, { recursive: true });
+    // Verify write access — Docker volume mounts can be owned by root even
+    // after mkdir succeeds, causing every subsequent write to fail with EACCES.
+    await fs.access(PRIMARY_DATA_DIR, fs.constants.W_OK);
+    resolvedDataDir = PRIMARY_DATA_DIR;
   } catch {
-    await fs.mkdir(DATA_DIR, { recursive: true });
+    // Read-only filesystem (Cloud Run) or unwritable Docker mount — use /tmp
+    try {
+      await fs.mkdir(FALLBACK_DATA_DIR, { recursive: true });
+    } catch {
+      // ignore
+    }
+    resolvedDataDir = FALLBACK_DATA_DIR;
   }
+  return resolvedDataDir;
 }
 
-function filePath(collection: string): string {
-  return path.join(DATA_DIR, `${collection}.json`);
+async function ensureDataDir(): Promise<void> {
+  await getDataDir();
+}
+
+async function filePath(collection: string): Promise<string> {
+  const dir = await getDataDir();
+  return path.join(dir, `${collection}.json`);
 }
 
 /**
@@ -28,7 +48,7 @@ function filePath(collection: string): string {
  */
 export async function readCollection<T>(collection: string): Promise<T[]> {
   await ensureDataDir();
-  const fp = filePath(collection);
+  const fp = await filePath(collection);
   try {
     const raw = await fs.readFile(fp, "utf-8");
     const parsed = JSON.parse(raw);
@@ -50,8 +70,12 @@ export async function writeCollection<T>(
   data: T[]
 ): Promise<void> {
   await ensureDataDir();
-  const fp = filePath(collection);
-  await fs.writeFile(fp, JSON.stringify(data, null, 2), "utf-8");
+  const fp = await filePath(collection);
+  try {
+    await fs.writeFile(fp, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error(`[storage] Error writing ${collection}:`, err);
+  }
 }
 
 /**
@@ -71,7 +95,7 @@ export async function appendToCollection<T>(
  */
 export async function readObject<T>(name: string): Promise<T | null> {
   await ensureDataDir();
-  const fp = filePath(name);
+  const fp = await filePath(name);
   try {
     const raw = await fs.readFile(fp, "utf-8");
     return JSON.parse(raw) as T;
@@ -89,8 +113,12 @@ export async function readObject<T>(name: string): Promise<T | null> {
  */
 export async function writeObject<T>(name: string, data: T): Promise<void> {
   await ensureDataDir();
-  const fp = filePath(name);
-  await fs.writeFile(fp, JSON.stringify(data, null, 2), "utf-8");
+  const fp = await filePath(name);
+  try {
+    await fs.writeFile(fp, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error(`[storage] Error writing object ${name}:`, err);
+  }
 }
 
 /**
