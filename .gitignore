@@ -11,3 +11,5 @@ data/
 Thumbs.db
 .vscode/
 tsconfig.tsbuildinfo
+life-os-workspace.json
+life-os-source.json
