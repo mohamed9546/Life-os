@@ -17,12 +17,14 @@ export const getCurrentAppUser = cache(async (): Promise<AuthenticatedAppUser | 
 
   const supabase = createServerSupabaseClient();
   if (!supabase) {
-    return null;
+    return PREVIEW_USER;
   }
 
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user?.id || !data.user.email) {
-    return null;
+    // No authenticated session — fall back to default owner user
+    // so the app is always accessible (single-user personal OS).
+    return PREVIEW_USER;
   }
 
   return {
