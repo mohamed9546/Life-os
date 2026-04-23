@@ -6,6 +6,16 @@
 
 import { promises as fs } from "fs";
 import path from "path";
+import { createServiceClient } from "@/lib/supabase/service";
+
+// Helper to get supabase if configured
+function getSupabase() {
+  try {
+    return createServiceClient();
+  } catch {
+    return null;
+  }
+}
 
 // Cloud Run has a read-only filesystem except /tmp.
 const PRIMARY_DATA_DIR = path.join(process.cwd(), "data");
@@ -46,10 +56,30 @@ async function filePath(collection: string): Promise<string> {
 }
 
 /**
- * Read a full collection from disk.
- * Returns empty array if file doesn't exist.
+ * Read a full collection.
+ * Uses Supabase storage_kv if available, otherwise falls back to disk.
  */
 export async function readCollection<T>(collection: string): Promise<T[]> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("storage_kv")
+        .select("value")
+        .eq("key", collection)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data && data.value) {
+        return Array.isArray(data.value) ? data.value : [];
+      }
+      return [];
+    } catch (err) {
+      console.error(`[storage] Error reading collection ${collection} from Supabase:`, err);
+      // Fallback to disk on error
+    }
+  }
+
   await ensureDataDir();
   const fp = await filePath(collection);
   try {
@@ -66,12 +96,26 @@ export async function readCollection<T>(collection: string): Promise<T[]> {
 }
 
 /**
- * Write a full collection to disk (overwrite).
+ * Write a full collection (overwrite).
  */
 export async function writeCollection<T>(
   collection: string,
   data: T[]
 ): Promise<void> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from("storage_kv")
+        .upsert({ key: collection, value: data, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return; // Return early if Supabase write succeeds
+    } catch (err) {
+      console.error(`[storage] Error writing collection ${collection} to Supabase:`, err);
+      // Fallback to disk on error
+    }
+  }
+
   await ensureDataDir();
   const fp = await filePath(collection);
   try {
@@ -97,6 +141,26 @@ export async function appendToCollection<T>(
  * Read a single config/object file (not an array).
  */
 export async function readObject<T>(name: string): Promise<T | null> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("storage_kv")
+        .select("value")
+        .eq("key", name)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data && data.value) {
+        return data.value as T;
+      }
+      return null;
+    } catch (err) {
+      console.error(`[storage] Error reading object ${name} from Supabase:`, err);
+      // Fallback to disk on error
+    }
+  }
+
   await ensureDataDir();
   const fp = await filePath(name);
   try {
@@ -115,6 +179,20 @@ export async function readObject<T>(name: string): Promise<T | null> {
  * Write a single config/object file.
  */
 export async function writeObject<T>(name: string, data: T): Promise<void> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from("storage_kv")
+        .upsert({ key: name, value: data, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return; // Return early if Supabase write succeeds
+    } catch (err) {
+      console.error(`[storage] Error writing object ${name} to Supabase:`, err);
+      // Fallback to disk on error
+    }
+  }
+
   await ensureDataDir();
   const fp = await filePath(name);
   try {
