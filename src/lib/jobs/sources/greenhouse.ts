@@ -6,7 +6,7 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
-import { readObject, ConfigFiles } from "@/lib/storage";
+import { getAppConfig } from "@/lib/config/app-config";
 import { AppConfig, GreenhouseCompanyConfig } from "@/types";
 import {
   JobSourceAdapter,
@@ -57,7 +57,7 @@ export class GreenhouseAdapter implements JobSourceAdapter {
   readonly displayName = "Greenhouse";
 
   private async getCompanies(): Promise<GreenhouseCompanyConfig[]> {
-    const appConfig = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+    const appConfig = await getAppConfig();
     if (!appConfig?.jobSources?.greenhouse?.enabled) return [];
     return appConfig.jobSources.greenhouse.companies.filter((c) => c.enabled);
   }

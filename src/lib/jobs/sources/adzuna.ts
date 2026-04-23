@@ -5,7 +5,7 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
-import { readObject, ConfigFiles } from "@/lib/storage";
+import { getAppConfig } from "@/lib/config/app-config";
 import { AppConfig } from "@/types";
 import {
   JobSourceAdapter,
@@ -59,7 +59,7 @@ export class AdzunaAdapter implements JobSourceAdapter {
     country: string;
     enabled: boolean;
   } | null> {
-    const appConfig = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+    const appConfig = await getAppConfig();
     if (!appConfig?.jobSources?.adzuna) return null;
     return appConfig.jobSources.adzuna;
   }
@@ -98,9 +98,8 @@ export class AdzunaAdapter implements JobSourceAdapter {
         app_id: config.appId,
         app_key: config.appKey,
         results_per_page: perPage.toString(),
-        page: page.toString(),
         what,
-        content_type: "application/json",
+        "content-type": "application/json",
       });
 
       if (where) params.set("where", where);

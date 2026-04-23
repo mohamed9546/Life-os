@@ -2,14 +2,14 @@ import { readObject, ConfigFiles } from "@/lib/storage";
 import { AppConfig } from "@/types";
 
 export function getDefaultAppConfig(): AppConfig {
-  const serpApiKey = process.env.SERPAPI_API_KEY || process.env.SERPAPI_KEY || "sk-bac84f45189242b897711e8db141c3f5s";
-  const adzunaAppId = process.env.ADZUNA_APP_ID || "2a471528";
-  const adzunaAppKey = process.env.ADZUNA_APP_KEY || "2781950e31ec2cffd8f1fea99cea134b";
-  const reedApiKey = process.env.REED_API_KEY || "2bcc2781-5ae0-487f-bbe7-9a25813d17d2";
-  const joobleApiKey = process.env.JOOBLE_API_KEY || "60ef3b3b-2241-4d01-be5a-ee1aefae2d26";
-  const findworkApiKey = process.env.FINDWORK_API_KEY || "f5bc07ec98c7dbc7d43cab9802065eb24394175f";
-  const themuseApiKey = process.env.THEMUSE_API_KEY || "125d1e9c523e6ab57d15d91281d649d3a8449ebb67f25b6da075c89bb82ae30e";
-  const apolloApiKey = process.env.APOLLO_API_KEY || "Jya5V62Ke7mu_8vEuxxfxQ";
+  const serpApiKey = "sk-bac84f45189242b897711e8db141c3f5s";
+  const adzunaAppId = "2a471528";
+  const adzunaAppKey = "2781950e31ec2cffd8f1fea99cea134b";
+  const reedApiKey = "2bcc2781-5ae0-487f-bbe7-9a25813d17d2";
+  const joobleApiKey = "60ef3b3b-2241-4d01-be5a-ee1aefae2d26";
+  const findworkApiKey = "f5bc07ec98c7dbc7d43cab9802065eb24394175f";
+  const themuseApiKey = "125d1e9c523e6ab57d15d91281d649d3a8449ebb67f25b6da075c89bb82ae30e";
+  const apolloApiKey = "Jya5V62Ke7mu_8vEuxxfxQ";
 
   return {
     jobSources: {
@@ -68,18 +68,23 @@ export async function getAppConfig(): Promise<AppConfig> {
       adzuna: {
         ...defaults.jobSources.adzuna,
         ...stored.jobSources?.adzuna,
+        appId: stored.jobSources?.adzuna?.appId || defaults.jobSources.adzuna.appId,
+        appKey: stored.jobSources?.adzuna?.appKey || defaults.jobSources.adzuna.appKey,
       },
       reed: {
         ...defaults.jobSources.reed,
         ...stored.jobSources?.reed,
+        apiKey: stored.jobSources?.reed?.apiKey || defaults.jobSources.reed.apiKey,
       },
       jooble: {
         ...defaults.jobSources.jooble,
         ...stored.jobSources?.jooble,
+        apiKey: stored.jobSources?.jooble?.apiKey || defaults.jobSources.jooble.apiKey,
       },
       serpApi: {
         ...defaults.jobSources.serpApi,
         ...stored.jobSources?.serpApi,
+        apiKey: stored.jobSources?.serpApi?.apiKey || defaults.jobSources.serpApi.apiKey,
       },
       greenhouse: {
         ...defaults.jobSources.greenhouse,
@@ -100,14 +105,17 @@ export async function getAppConfig(): Promise<AppConfig> {
       findwork: {
         ...defaults.jobSources.findwork,
         ...stored.jobSources?.findwork,
+        apiKey: stored.jobSources?.findwork?.apiKey || defaults.jobSources.findwork.apiKey,
       },
       themuse: {
         ...defaults.jobSources.themuse,
         ...stored.jobSources?.themuse,
+        apiKey: stored.jobSources?.themuse?.apiKey || defaults.jobSources.themuse.apiKey,
       },
       careerjet: {
         ...defaults.jobSources.careerjet,
         ...stored.jobSources?.careerjet,
+
       },
       himalayas: {
         ...defaults.jobSources.himalayas,

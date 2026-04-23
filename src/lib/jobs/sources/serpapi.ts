@@ -7,7 +7,7 @@
 
 import { RawJobItem } from "@/types";
 import { AppConfig } from "@/types";
-import { readObject, ConfigFiles } from "@/lib/storage";
+import { getAppConfig } from "@/lib/config/app-config";
 import {
   JobSearchQuery,
   JobSourceAdapter,
@@ -54,7 +54,7 @@ export class SerpApiAdapter implements JobSourceAdapter {
   readonly displayName = "SerpAPI Google Jobs";
 
   private async getConfig(): Promise<AppConfig["jobSources"]["serpApi"] | null> {
-    const appConfig = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+    const appConfig = await getAppConfig();
     return appConfig?.jobSources?.serpApi ?? null;
   }
 

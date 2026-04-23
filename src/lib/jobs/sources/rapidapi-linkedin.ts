@@ -9,7 +9,7 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
-import { readObject, ConfigFiles } from "@/lib/storage";
+import { getAppConfig } from "@/lib/config/app-config";
 import { AppConfig } from "@/types";
 import {
   JobSourceAdapter,
@@ -58,7 +58,7 @@ export class RapidAPILinkedInAdapter implements JobSourceAdapter {
     apiKey: string;
     enabled: boolean;
   } | null> {
-    const appConfig = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+    const appConfig = await getAppConfig();
     if (!appConfig?.jobSources?.rapidApiLinkedin) return null;
     return appConfig.jobSources.rapidApiLinkedin;
   }

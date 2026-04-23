@@ -6,7 +6,7 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
-import { readObject, ConfigFiles } from "@/lib/storage";
+import { getAppConfig } from "@/lib/config/app-config";
 import { AppConfig, LeverCompanyConfig } from "@/types";
 import {
   JobSourceAdapter,
@@ -47,7 +47,7 @@ export class LeverAdapter implements JobSourceAdapter {
   readonly displayName = "Lever";
 
   private async getCompanies(): Promise<LeverCompanyConfig[]> {
-    const appConfig = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+    const appConfig = await getAppConfig();
     if (!appConfig?.jobSources?.lever?.enabled) return [];
     return appConfig.jobSources.lever.companies.filter((c) => c.enabled);
   }

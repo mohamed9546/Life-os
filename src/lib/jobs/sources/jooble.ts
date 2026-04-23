@@ -5,7 +5,7 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
-import { readObject, ConfigFiles } from "@/lib/storage";
+import { getAppConfig } from "@/lib/config/app-config";
 import { AppConfig } from "@/types";
 import {
   JobSourceAdapter,
@@ -44,7 +44,7 @@ export class JoobleAdapter implements JobSourceAdapter {
     apiKey: string;
     enabled: boolean;
   } | null> {
-    const appConfig = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+    const appConfig = await getAppConfig();
     if (!appConfig?.jobSources?.jooble) return null;
     return appConfig.jobSources.jooble;
   }

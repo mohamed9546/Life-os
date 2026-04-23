@@ -29,18 +29,14 @@ export async function GET() {
         dbResult = data;
         
         // Test write
-        writeCheck = "attempting write...";
-        const { error: wError } = await supabase.from("storage_kv").upsert({
-          key: "debug-test",
-          value: { timestamp: new Date().toISOString() },
-          updated_at: new Date().toISOString()
-        });
+        writeCheck = "attempting to delete app-config from DB...";
+        const { error: wError } = await supabase.from("storage_kv").delete().eq("key", "app-config");
         
         if (wError) {
-          writeCheck = "write failed";
+          writeCheck = "delete failed";
           writeError = wError;
         } else {
-          writeCheck = "write success";
+          writeCheck = "delete success! Now app will use hardcoded defaults.";
         }
       }
     } else {
