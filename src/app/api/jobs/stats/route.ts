@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { getJobStats } from "@/lib/jobs/storage";
-import { getActiveAdapters, getAllAdapters } from "@/lib/jobs/sources";
+import { getAdapterConfigStatus, getAllAdapters } from "@/lib/jobs/sources";
 import { getEnabledUserSourceIds } from "@/lib/career/settings";
 import { requireAppUser } from "@/lib/auth/session";
 
@@ -14,19 +14,25 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireAppUser();
-    const [stats, activeAdapters, allAdapters, enabledSourceIds] = await Promise.all([
+    const [stats, adapterConfigStatus, allAdapters, enabledSourceIds] = await Promise.all([
       getJobStats(user.id),
-      getActiveAdapters(),
+      getAdapterConfigStatus(),
       Promise.resolve(getAllAdapters()),
       getEnabledUserSourceIds(user.id, user.email),
     ]);
 
+    const configuredSourceIds = new Set(
+      adapterConfigStatus
+        .filter((adapter) => adapter.configured)
+        .map((adapter) => adapter.sourceId)
+    );
+
     const adapterStates = allAdapters.map((a) => ({
       id: a.sourceId,
       name: a.displayName,
-      active:
-        enabledSourceIds.includes(a.sourceId) &&
-        activeAdapters.some((aa) => aa.sourceId === a.sourceId),
+      enabled: enabledSourceIds.includes(a.sourceId),
+      configured: configuredSourceIds.has(a.sourceId),
+      active: enabledSourceIds.includes(a.sourceId) && configuredSourceIds.has(a.sourceId),
     }));
 
     return NextResponse.json({

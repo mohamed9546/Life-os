@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SavedSearch, UserSettingsBundle } from "@/types";
+import { CareerProfile, SavedSearch, SourcePreference, UserSettingsBundle } from "@/types";
 import { useApi } from "@/hooks/use-api";
 import { SOURCE_CATALOG } from "@/lib/career/defaults";
 import { CommandBar, Panel, SectionHeading, StatusChip } from "@/components/ui/system";
@@ -10,10 +10,24 @@ import { AdminIntegrationsPanel } from "./admin-integrations-panel";
 import { CandidateProfilePanel } from "./candidate-profile-panel";
 
 type SettingsResponse = UserSettingsBundle;
+type SourceRuntimeInfo = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  configured: boolean;
+  active: boolean;
+};
+type JobsStatsResponse = {
+  sources?: {
+    adapters?: SourceRuntimeInfo[];
+  };
+};
 
 export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
   const settingsApi = useApi<SettingsResponse>();
+  const statsApi = useApi<JobsStatsResponse>();
   const [settings, setSettings] = useState<UserSettingsBundle | null>(null);
+  const [sourceRuntime, setSourceRuntime] = useState<SourceRuntimeInfo[]>([]);
   const [saveMessage, setSaveMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -23,11 +37,22 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
         setSettings(data);
       }
     });
+
+    statsApi.call("/api/jobs/stats").then((data) => {
+      setSourceRuntime(data?.sources?.adapters || []);
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const save = async () => {
+  const persistSettings = async (
+    patch: {
+      profile?: Partial<CareerProfile>;
+      savedSearches?: SavedSearch[];
+      sourcePreferences?: SourcePreference[];
+    },
+    message = "Settings saved"
+  ) => {
     if (!settings) {
-      return;
+      return null;
     }
 
     setSaving(true);
@@ -35,16 +60,26 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
 
     const result = await settingsApi.call("/api/settings", {
       method: "PUT",
-      body: JSON.stringify(settings),
+      body: JSON.stringify(patch),
     });
 
     setSaving(false);
 
     if (result) {
       setSettings(result);
-      setSaveMessage("Settings saved");
+      setSaveMessage(message);
       setTimeout(() => setSaveMessage(""), 3000);
     }
+
+    return result;
+  };
+
+  const save = async () => {
+    if (!settings) {
+      return;
+    }
+
+    await persistSettings(settings);
   };
 
   const updateProfile = (patch: Partial<UserSettingsBundle["profile"]>) => {
@@ -111,7 +146,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
     });
   };
 
-  const toggleSource = (sourceId: string) => {
+  const toggleSource = async (sourceId: string) => {
     if (!settings) {
       return;
     }
@@ -142,10 +177,53 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
           },
         ];
 
+    const nextSettings = {
+      ...settings,
+      sourcePreferences: nextSources,
+    };
+
+    setSettings(nextSettings);
+    await persistSettings(
+      { sourcePreferences: nextSources },
+      `Source ${existing?.enabled ? "disabled" : "enabled"}`
+    );
+
+    const stats = await statsApi.call("/api/jobs/stats");
+    setSourceRuntime(stats?.sources?.adapters || []);
+  };
+
+  const enableRecommendedSources = async () => {
+    if (!settings) {
+      return;
+    }
+
+    const existingBySource = new Map(
+      settings.sourcePreferences.map((source) => [source.sourceId, source])
+    );
+    const now = new Date().toISOString();
+    const nextSources = SOURCE_CATALOG.map((sourceMeta) => {
+      const existing = existingBySource.get(sourceMeta.id);
+      return {
+        id: existing?.id || `${settings.profile.id}-${sourceMeta.id}`,
+        userId: settings.profile.id,
+        sourceId: sourceMeta.id,
+        enabled: sourceMeta.defaultEnabled || Boolean(existing?.enabled),
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+      };
+    });
+
     setSettings({
       ...settings,
       sourcePreferences: nextSources,
     });
+    await persistSettings(
+      { sourcePreferences: nextSources },
+      "Recommended sources enabled"
+    );
+
+    const stats = await statsApi.call("/api/jobs/stats");
+    setSourceRuntime(stats?.sources?.adapters || []);
   };
 
   if (!settings) {
@@ -196,6 +274,15 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
           <SectionHeading
             title="Target profile"
             description="Shape how the career engine interprets location, seniority, role lanes, and notification cadence."
+            actions={
+              <button
+                className="btn-secondary btn-sm"
+                onClick={() => persistSettings({ profile: settings.profile }, "Profile saved")}
+                disabled={saving}
+              >
+                Save profile
+              </button>
+            }
           />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field>
@@ -288,18 +375,44 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
           <SectionHeading
             title="Source permissions"
             description="Enable only the ingestion lanes this workspace should actively use."
+            actions={
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="btn-secondary btn-sm"
+                  onClick={enableRecommendedSources}
+                  disabled={saving}
+                >
+                  Enable recommended
+                </button>
+                <button
+                  className="btn-secondary btn-sm"
+                  onClick={() =>
+                    persistSettings(
+                      { sourcePreferences: settings.sourcePreferences },
+                      "Source permissions saved"
+                    )
+                  }
+                  disabled={saving}
+                >
+                  Save sources
+                </button>
+              </div>
+            }
           />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {SOURCE_CATALOG.map((sourceMeta) => {
               const source = settings.sourcePreferences.find(
                 (preference) => preference.sourceId === sourceMeta.id
               );
+              const runtime = sourceRuntime.find((item) => item.id === sourceMeta.id);
+              const enabled = Boolean(source?.enabled);
+              const statusText = getSourceStatusText(enabled, runtime);
 
               return (
                 <button
                   key={sourceMeta.id}
                   className={`rounded-[24px] border px-4 py-4 text-left transition-colors ${
-                    source?.enabled
+                    enabled
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
                   }`}
@@ -310,22 +423,20 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
                       <p className="text-sm font-semibold">{sourceMeta.label}</p>
                       <p
                         className={`mt-2 text-xs leading-6 ${
-                          source?.enabled ? "text-slate-300" : "text-slate-500"
+                          enabled ? "text-slate-300" : "text-slate-500"
                         }`}
                       >
-                        {source?.enabled
-                          ? "Enabled for fetch and ranking"
-                          : "Disabled for this workspace"}
+                        {statusText}
                       </p>
                     </div>
                     <span
                       className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                        source?.enabled
+                        enabled
                           ? "bg-white/10 text-white"
                           : "bg-slate-200 text-slate-600"
                       }`}
                     >
-                      {source?.enabled ? "On" : "Off"}
+                      {enabled ? "On" : "Off"}
                     </span>
                   </div>
                 </button>
@@ -340,9 +451,23 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
           title="Saved searches"
           description="Define the exact query lanes that feed the career engine."
           actions={
-            <button className="btn-secondary btn-sm" onClick={addSearch}>
-              Add search
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-secondary btn-sm" onClick={addSearch}>
+                Add search
+              </button>
+              <button
+                className="btn-primary btn-sm"
+                onClick={() =>
+                  persistSettings(
+                    { savedSearches: settings.savedSearches },
+                    "Saved searches saved"
+                  )
+                }
+                disabled={saving}
+              >
+                Save searches
+              </button>
+            </div>
           }
         />
 
@@ -436,6 +561,22 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
       ) : null}
     </div>
   );
+}
+
+function getSourceStatusText(enabled: boolean, runtime?: SourceRuntimeInfo) {
+  if (enabled && runtime?.configured) {
+    return "Enabled and runnable in the pipeline";
+  }
+
+  if (enabled && runtime && !runtime.configured) {
+    return "Enabled, but needs API key, company board, or feed repair";
+  }
+
+  if (!enabled && runtime?.configured) {
+    return "Disabled for this workspace; ready if enabled";
+  }
+
+  return enabled ? "Enabled for fetch and ranking" : "Disabled for this workspace";
 }
 
 function Field({ children }: { children: React.ReactNode }) {

@@ -7,7 +7,7 @@ import {
   getRejectedJobs,
   getEnrichedJobs,
 } from "@/lib/jobs/storage";
-import { getActiveAdapters, getAllAdapters } from "@/lib/jobs/sources";
+import { getAdapterConfigStatus, getAllAdapters } from "@/lib/jobs/sources";
 import { getEnabledUserSourceIds } from "@/lib/career/settings";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function GET() {
       rejected,
       enriched,
       stats,
-      activeAdapters,
+      adapterConfigStatus,
       allAdapters,
       enabledSourceIds,
     ] = await Promise.all([
@@ -31,10 +31,16 @@ export async function GET() {
       getRejectedJobs(user.id),
       getEnrichedJobs(user.id),
       getJobStats(user.id),
-      getActiveAdapters(),
+      getAdapterConfigStatus(),
       Promise.resolve(getAllAdapters()),
       getEnabledUserSourceIds(user.id, user.email),
     ]);
+
+    const configuredSourceIds = new Set(
+      adapterConfigStatus
+        .filter((adapter) => adapter.configured)
+        .map((adapter) => adapter.sourceId)
+    );
 
     return NextResponse.json({
       inbox,
@@ -45,9 +51,9 @@ export async function GET() {
       sources: allAdapters.map((adapter) => ({
         id: adapter.sourceId,
         name: adapter.displayName,
-        active:
-          enabledSourceIds.includes(adapter.sourceId) &&
-          activeAdapters.some((active) => active.sourceId === adapter.sourceId),
+        enabled: enabledSourceIds.includes(adapter.sourceId),
+        configured: configuredSourceIds.has(adapter.sourceId),
+        active: enabledSourceIds.includes(adapter.sourceId) && configuredSourceIds.has(adapter.sourceId),
       })),
     });
   } catch (err) {

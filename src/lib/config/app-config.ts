@@ -1,6 +1,10 @@
 import { readObject, ConfigFiles } from "@/lib/storage";
 import { AppConfig } from "@/types";
 
+function fallbackSecret(value: string | undefined, fallback: string) {
+  return value?.trim() ? value : fallback;
+}
+
 export function getDefaultAppConfig(): AppConfig {
   const serpApiKey = "f66ac90eb04f2a20d3a12d8996e95ad682e9cb8665cd5a089dc506acab21635f";
   const adzunaAppId = "2a471528";
@@ -162,6 +166,10 @@ export async function getAppConfig(): Promise<AppConfig> {
       apollo: {
         ...defaults.enrichment.apollo,
         ...stored.enrichment?.apollo,
+        apiKey: fallbackSecret(
+          stored.enrichment?.apollo?.apiKey,
+          defaults.enrichment.apollo.apiKey
+        ),
       },
     },
     worker: stored.worker || defaults.worker,
