@@ -201,15 +201,19 @@ async function fetchFromSources(
   opts: PipelineOptions
 ): Promise<{ allJobs: RawJobItem[]; fetchResults: FetchResult[] }> {
   let adapters = await getActiveAdapters();
+  
+  console.log(`[pipeline] Found ${adapters.length} active adapters globally.`);
 
   if (opts.sources && opts.sources.length > 0) {
     adapters = adapters.filter((adapter) => opts.sources!.includes(adapter.sourceId));
   }
 
   if (adapters.length === 0) {
-    console.log("[pipeline] No active adapters found");
+    console.log("[pipeline] No active adapters found after filtering");
     return { allJobs: [], fetchResults: [] };
   }
+  
+  console.log(`[pipeline] Proceeding with adapters:`, adapters.map(a => a.sourceId).join(', '));
 
   const queries = opts.queries || DEFAULT_SEARCH_QUERIES;
   const allJobs: RawJobItem[] = [];
@@ -225,6 +229,7 @@ async function fetchFromSources(
 
         if (result.error) {
           adapterError = result.error;
+          console.error(`[pipeline] Error from ${adapter.sourceId} for query "${query.keywords.join(', ')}":`, result.error);
         }
 
         if (result.jobs.length > 0) {
@@ -235,6 +240,7 @@ async function fetchFromSources(
         await new Promise((resolve) => setTimeout(resolve, 250));
       } catch (err) {
         adapterError = err instanceof Error ? err.message : "Unknown fetch error";
+        console.error(`[pipeline] Exception from ${adapter.sourceId}:`, adapterError);
       }
     }
 
