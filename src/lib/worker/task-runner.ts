@@ -536,6 +536,7 @@ async function runRankTask(): Promise<Record<string, unknown>> {
 
 async function runFullPipelineTask(): Promise<Record<string, unknown>> {
   const result = await runFullPipeline({
+    budgetProfile: "worker",
     maxEnrich: resolvePipelineEnrichmentBudget("worker"),
   });
   return {

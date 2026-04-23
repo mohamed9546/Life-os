@@ -23,7 +23,13 @@ import {
   saveToRejected,
 } from "@/lib/jobs/storage";
 import { dedupeJobsById } from "@/lib/jobs/selectors";
-import { resolvePipelineEnrichmentBudget } from "./config";
+import {
+  type PipelineBudgetProfile,
+  resolvePipelineContactEnrichment,
+  resolvePipelineEnrichmentBudget,
+  resolvePipelineQueryBudget,
+  resolvePipelineSourceBudget,
+} from "./config";
 
 export interface FetchResult {
   source: string;
@@ -66,6 +72,7 @@ export interface PipelineOptions {
   maxEnrich?: number;
   skipEnrich?: boolean;
   skipRank?: boolean;
+  budgetProfile?: PipelineBudgetProfile;
 }
 
 export async function runFullPipeline(
@@ -73,6 +80,7 @@ export async function runFullPipeline(
 ): Promise<PipelineResult> {
   const totalStart = Date.now();
   const opts = options || {};
+  const budgetProfile = opts.budgetProfile || "manual";
 
   console.log("\n========================================");
   console.log("[pipeline] Starting full job pipeline");
@@ -103,9 +111,13 @@ export async function runFullPipeline(
 
   if (!opts.skipEnrich && dedupeResult.newJobs.length > 0) {
     const enrichStart = Date.now();
-    const enrichBudget = resolvePipelineEnrichmentBudget("manual", opts.maxEnrich);
+    const enrichBudget = resolvePipelineEnrichmentBudget(
+      budgetProfile,
+      opts.maxEnrich
+    );
     enrichResult = await enrichJobs(dedupeResult.newJobs, {
       maxBatchSize: enrichBudget,
+      skipContactEnrichment: !resolvePipelineContactEnrichment(budgetProfile),
     });
     enrichMs = Date.now() - enrichStart;
 
@@ -200,56 +212,84 @@ export async function runFullPipeline(
 async function fetchFromSources(
   opts: PipelineOptions
 ): Promise<{ allJobs: RawJobItem[]; fetchResults: FetchResult[] }> {
+  const budgetProfile = opts.budgetProfile || "manual";
   let adapters = await getActiveAdapters();
-  
+
   console.log(`[pipeline] Found ${adapters.length} active adapters globally.`);
 
   if (opts.sources && opts.sources.length > 0) {
     adapters = adapters.filter((adapter) => opts.sources!.includes(adapter.sourceId));
   }
 
+  const sourceBudget = resolvePipelineSourceBudget(budgetProfile);
+  if (sourceBudget && adapters.length > sourceBudget) {
+    console.log(
+      `[pipeline] Capping source fan-out to ${sourceBudget}/${adapters.length}`
+    );
+    adapters = adapters.slice(0, sourceBudget);
+  }
+
   if (adapters.length === 0) {
     console.log("[pipeline] No active adapters found after filtering");
     return { allJobs: [], fetchResults: [] };
   }
-  
-  console.log(`[pipeline] Proceeding with adapters:`, adapters.map(a => a.sourceId).join(', '));
 
-  const queries = opts.queries && opts.queries.length > 0 ? opts.queries : DEFAULT_SEARCH_QUERIES;
-  const allJobs: RawJobItem[] = [];
-  const fetchResults: FetchResult[] = [];
+  console.log(
+    `[pipeline] Proceeding with adapters:`,
+    adapters.map((adapter) => adapter.sourceId).join(", ")
+  );
 
-  for (const adapter of adapters) {
-    let adapterJobCount = 0;
-    let adapterError: string | undefined;
-
-    for (const query of queries) {
-      try {
-        const result: JobSourceResult = await adapter.fetchJobs(query);
-
-        if (result.error) {
-          adapterError = result.error;
-          console.error(`[pipeline] Error from ${adapter.sourceId} for query "${query.keywords.join(', ')}":`, result.error);
-        }
-
-        if (result.jobs.length > 0) {
-          allJobs.push(...result.jobs);
-          adapterJobCount += result.jobs.length;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      } catch (err) {
-        adapterError = err instanceof Error ? err.message : "Unknown fetch error";
-        console.error(`[pipeline] Exception from ${adapter.sourceId}:`, adapterError);
-      }
-    }
-
-    fetchResults.push({
-      source: adapter.sourceId,
-      jobsFetched: adapterJobCount,
-      error: adapterError,
-    });
+  let queries =
+    opts.queries && opts.queries.length > 0 ? opts.queries : DEFAULT_SEARCH_QUERIES;
+  const queryBudget = resolvePipelineQueryBudget(budgetProfile);
+  if (queryBudget && queries.length > queryBudget) {
+    console.log(
+      `[pipeline] Capping query fan-out to ${queryBudget}/${queries.length}`
+    );
+    queries = queries.slice(0, queryBudget);
   }
+
+  // Run adapters in parallel — each hits a different API/domain so there's no shared
+  // rate limit. Queries stay sequential within each adapter to respect per-domain limits.
+  const adapterResults = await Promise.all(
+    adapters.map(async (adapter) => {
+      let adapterJobCount = 0;
+      let adapterError: string | undefined;
+      const adapterJobs: RawJobItem[] = [];
+
+      for (const query of queries) {
+        try {
+          const result: JobSourceResult = await adapter.fetchJobs(query);
+
+          if (result.error) {
+            adapterError = result.error;
+            console.error(
+              `[pipeline] Error from ${adapter.sourceId} for query "${query.keywords.join(", ")}":`,
+              result.error
+            );
+          }
+
+          if (result.jobs.length > 0) {
+            adapterJobs.push(...result.jobs);
+            adapterJobCount += result.jobs.length;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        } catch (err) {
+          adapterError = err instanceof Error ? err.message : "Unknown fetch error";
+          console.error(`[pipeline] Exception from ${adapter.sourceId}:`, adapterError);
+        }
+      }
+
+      return {
+        jobs: adapterJobs,
+        fetchResult: { source: adapter.sourceId, jobsFetched: adapterJobCount, error: adapterError } as FetchResult,
+      };
+    })
+  );
+
+  const allJobs = adapterResults.flatMap((r) => r.jobs);
+  const fetchResults = adapterResults.map((r) => r.fetchResult);
 
   return { allJobs, fetchResults };
 }

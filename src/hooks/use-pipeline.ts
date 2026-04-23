@@ -34,6 +34,42 @@ interface PipelineStatus {
   error: string | null;
 }
 
+interface ApiErrorPayload {
+  error?: string;
+  success?: boolean;
+}
+
+function summarizeErrorBody(status: number, text: string): string {
+  const normalized = text.trim().replace(/\s+/g, " ");
+
+  if (/upstream|timeout|gateway/i.test(normalized)) {
+    return "Pipeline timed out - the run is taking too long. Try 'Fetch Only' for a quicker pass.";
+  }
+
+  if (!normalized) {
+    return `Server error (${status})`;
+  }
+
+  return `Server error (${status}): ${normalized.slice(0, 140)}`;
+}
+
+async function readJsonResponse<T extends ApiErrorPayload>(
+  response: Response
+): Promise<T> {
+  const text = await response.text();
+  const contentType = response.headers.get("content-type") || "";
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(summarizeErrorBody(response.status, text));
+  }
+
+  try {
+    return (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    throw new Error(summarizeErrorBody(response.status, text));
+  }
+}
+
 export function usePipeline() {
   const [status, setStatus] = useState<PipelineStatus>({
     running: false,
@@ -55,7 +91,10 @@ export function usePipeline() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(options || {}),
         });
-        const data = await res.json();
+        const data = await readJsonResponse<PipelineApiResult>(res);
+        if (!res.ok || data.success === false) {
+          throw new Error(data.error || `Pipeline failed (${res.status})`);
+        }
         setStatus({ running: false, lastResult: data, error: null });
         return data;
       } catch (err) {
@@ -75,7 +114,10 @@ export function usePipeline() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source }),
       });
-      const data = await res.json();
+      const data = await readJsonResponse<PipelineApiResult>(res);
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || `Fetch failed (${res.status})`);
+      }
       setStatus({ running: false, lastResult: data, error: null });
       return data;
     } catch (err) {
@@ -94,7 +136,10 @@ export function usePipeline() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ taskId, force }),
         });
-        const data = await res.json();
+        const data = await readJsonResponse<PipelineApiResult>(res);
+        if (!res.ok || data.success === false) {
+          throw new Error(data.error || `Task failed (${res.status})`);
+        }
         setStatus({ running: false, lastResult: data, error: null });
         return data;
       } catch (err) {
