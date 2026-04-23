@@ -31,7 +31,7 @@ export type RoutineArea = "career" | "money" | "life" | "health" | "admin";
 export type RoutineCadence = "daily" | "weekly" | "custom";
 export type AIProvider = "ollama" | "gemini";
 export type AIRuntimeMode = "local" | "cloud";
-export type AICompatibilityMode = "ollama" | "openai" | "anthropic";
+export type AICompatibilityMode = "ollama" | "openai" | "anthropic" | "gemini";
 export type AIFailureKind =
   | "timeout"
   | "runtime_error"
