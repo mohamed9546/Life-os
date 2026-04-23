@@ -1,0 +1,6 @@
+# Force LF on files that must run on Linux (VM, Docker, CI)
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+*.service   text eol=lf
