@@ -12,18 +12,36 @@ export async function GET() {
   let dbCheck = "not attempted";
   let dbError = null;
   let dbResult = null;
+  let writeCheck = "not attempted";
+  let writeError = null;
 
   try {
     const supabase = createServiceClient();
     if (supabase) {
       dbCheck = "attempting connection...";
+      // Test read
       const { data, error } = await supabase.from("storage_kv").select("key").limit(1);
       if (error) {
-        dbCheck = "failed";
+        dbCheck = "read failed";
         dbError = error;
       } else {
-        dbCheck = "success";
+        dbCheck = "read success";
         dbResult = data;
+        
+        // Test write
+        writeCheck = "attempting write...";
+        const { error: wError } = await supabase.from("storage_kv").upsert({
+          key: "debug-test",
+          value: { timestamp: new Date().toISOString() },
+          updated_at: new Date().toISOString()
+        });
+        
+        if (wError) {
+          writeCheck = "write failed";
+          writeError = wError;
+        } else {
+          writeCheck = "write success";
+        }
       }
     } else {
       dbCheck = "client creation failed (missing keys)";
@@ -44,6 +62,8 @@ export async function GET() {
       status: dbCheck,
       error: dbError,
       result: dbResult,
+      writeStatus: writeCheck,
+      writeError: writeError,
     }
   });
 }

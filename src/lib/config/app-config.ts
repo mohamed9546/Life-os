@@ -2,16 +2,20 @@ import { readObject, ConfigFiles } from "@/lib/storage";
 import { AppConfig } from "@/types";
 
 export function getDefaultAppConfig(): AppConfig {
-  const serpApiKey =
-    process.env.SERPAPI_API_KEY ||
-    process.env.SERPAPI_KEY ||
-    "";
+  const serpApiKey = process.env.SERPAPI_API_KEY || process.env.SERPAPI_KEY || "";
+  const adzunaAppId = process.env.ADZUNA_APP_ID || "";
+  const adzunaAppKey = process.env.ADZUNA_APP_KEY || "";
+  const reedApiKey = process.env.REED_API_KEY || "";
+  const joobleApiKey = process.env.JOOBLE_API_KEY || "";
+  const findworkApiKey = process.env.FINDWORK_API_KEY || "";
+  const themuseApiKey = process.env.THEMUSE_API_KEY || "";
+  const apolloApiKey = process.env.APOLLO_API_KEY || "";
 
   return {
     jobSources: {
-      adzuna: { enabled: true, appId: "", appKey: "", country: "gb" },
-      reed: { enabled: true, apiKey: "" },
-      jooble: { enabled: false, apiKey: "" },
+      adzuna: { enabled: true, appId: adzunaAppId, appKey: adzunaAppKey, country: "gb" },
+      reed: { enabled: true, apiKey: reedApiKey },
+      jooble: { enabled: false, apiKey: joobleApiKey },
       serpApi: {
         enabled: false,
         apiKey: serpApiKey,
@@ -23,8 +27,8 @@ export function getDefaultAppConfig(): AppConfig {
       lever: { enabled: true, companies: [] },
       remotive: { enabled: false },
       arbeitnow: { enabled: false },
-      findwork: { enabled: false, apiKey: "" },
-      themuse: { enabled: false, apiKey: "" },
+      findwork: { enabled: false, apiKey: findworkApiKey },
+      themuse: { enabled: false, apiKey: themuseApiKey },
       careerjet: { enabled: false, affid: "" },
       himalayas: { enabled: false },
       brightnetwork: { enabled: false },
@@ -35,7 +39,7 @@ export function getDefaultAppConfig(): AppConfig {
       rapidApiLinkedin: { enabled: false, apiKey: "" },
     },
     enrichment: {
-      apollo: { enabled: false, apiKey: "" },
+      apollo: { enabled: false, apiKey: apolloApiKey },
       autoEnrichCompany: true,
       autoFindDecisionMakers: true,
       autoFindEmails: true,
