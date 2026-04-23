@@ -79,7 +79,7 @@ type AiStatus = "online" | "degraded" | "offline";
 
 function useAiStatus(): { status: AiStatus; model: string } {
   const [status, setStatus] = useState<AiStatus>("online");
-  const [model, setModel] = useState("gemma4:e2b");
+  const [model, setModel] = useState("");
 
   useEffect(() => {
     async function check() {

@@ -105,6 +105,10 @@ export function AutomationDashboard() {
   const refresh = async () => {
     try {
       const response = await fetch("/api/admin/ops");
+      if (!response.ok) {
+        setOps(null);
+        return;
+      }
       const data = (await response.json()) as OpsResponse;
       setOps(data);
     } catch {
@@ -188,8 +192,8 @@ export function AutomationDashboard() {
     );
   }
 
-  const fetchTasks = ops.tasks.filter((task) => task.id.startsWith("fetch-"));
-  const aiTasks = ops.tasks.filter((task) => task.id.startsWith("ai-"));
+  const fetchTasks = (ops.tasks ?? []).filter((task) => task.id.startsWith("fetch-"));
+  const aiTasks = (ops.tasks ?? []).filter((task) => task.id.startsWith("ai-"));
 
   return (
     <div className="space-y-6">

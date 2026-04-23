@@ -30,7 +30,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   enabled: true,
   baseUrl: process.env.OLLAMA_BASE_URL || "",
   apiKey: process.env.GEMINI_API_KEY || null,
-  compatibilityMode: "ollama",
+  compatibilityMode: "gemini", // Avoids Ollama health check crash
   model: "gemini-1.5-flash",
   fallbackModel: null,
   timeoutMs: 45_000,
@@ -84,8 +84,8 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-candidate-profile": {
       enabled: true,
       label: "Extract candidate profile",
-      model: "gemini-1.5-pro",
-      fallbackModel: "gemini-1.5-flash",
+      model: "gemini-1.5-flash",
+      fallbackModel: null,
       timeoutMs: 35_000,
       retryAttempts: 0,
       temperature: 0.1,

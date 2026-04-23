@@ -15,21 +15,24 @@ let resolvedDataDir: string | null = null;
 async function getDataDir(): Promise<string> {
   if (resolvedDataDir) return resolvedDataDir;
 
-  try {
-    await fs.mkdir(PRIMARY_DATA_DIR, { recursive: true });
-    // Verify write access — Docker volume mounts can be owned by root even
-    // after mkdir succeeds, causing every subsequent write to fail with EACCES.
-    await fs.access(PRIMARY_DATA_DIR, fs.constants.W_OK);
-    resolvedDataDir = PRIMARY_DATA_DIR;
-  } catch {
-    // Read-only filesystem (Cloud Run) or unwritable Docker mount — use /tmp
+  const isCloudRun = !!process.env.K_SERVICE || !!process.env.GOOGLE_CLOUD_PROJECT;
+
+  if (isCloudRun) {
     try {
       await fs.mkdir(FALLBACK_DATA_DIR, { recursive: true });
     } catch {
       // ignore
     }
     resolvedDataDir = FALLBACK_DATA_DIR;
+  } else {
+    try {
+      await fs.mkdir(PRIMARY_DATA_DIR, { recursive: true });
+    } catch {
+      // ignore
+    }
+    resolvedDataDir = PRIMARY_DATA_DIR;
   }
+
   return resolvedDataDir;
 }
 

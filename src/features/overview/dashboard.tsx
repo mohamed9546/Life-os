@@ -32,6 +32,10 @@ export function OverviewDashboard() {
     const load = async () => {
       try {
         const response = await fetch("/api/jobs/stats");
+        if (!response.ok) {
+          setJobsData(null);
+          return;
+        }
         const data = (await response.json()) as JobsResponse;
         setJobsData(data);
       } catch {
@@ -72,12 +76,12 @@ export function OverviewDashboard() {
       id: "actions-1",
       title: "Triage ranked roles with active sources first",
       body: "Prioritize Adzuna, Reed, Greenhouse, Lever, and SerpAPI matches before spending attention on fallback feeds.",
-      meta: `${jobsData?.sources.active ?? 0} configured live sources`,
+      meta: `${jobsData?.sources?.active ?? 0} configured live sources`,
       tone: "info" as const,
     },
     {
       id: "actions-2",
-      title: "Keep live AI tasks on gemma4:e2b",
+      title: "Keep live AI tasks on the compact model",
       body: "Interactive parsing, evaluation, and summaries should stay on the compact model to avoid local latency spikes.",
       meta: health?.primaryModel || config?.model || "model pending",
       tone: health?.available ? ("success" as const) : ("warning" as const),
@@ -119,8 +123,8 @@ export function OverviewDashboard() {
                 <StatusChip tone={health?.available ? "success" : "warning"}>
                   {health?.available ? "AI live" : "AI attention needed"}
                 </StatusChip>
-                <StatusChip tone={(jobsData?.sources.active || 0) > 0 ? "info" : "warning"}>
-                  {jobsData?.sources.active || 0}/{jobsData?.sources.total || 0} active sources
+                <StatusChip tone={(jobsData?.sources?.active || 0) > 0 ? "info" : "warning"}>
+                  {jobsData?.sources?.active || 0}/{jobsData?.sources?.total || 0} active sources
                 </StatusChip>
               </div>
               <p className="mt-4 text-sm leading-6 text-slate-600">
@@ -157,7 +161,7 @@ export function OverviewDashboard() {
                 Live default
               </p>
               <p className="mt-3 font-mono text-sm text-slate-900">
-                {health?.primaryModel || config?.model || "gemma4:e2b"}
+                {health?.primaryModel || config?.model || "—"}
               </p>
               <p className="mt-3 text-sm leading-6 text-slate-600">
                 Parse-job, evaluate-job, summarize-week, and transaction categorization should stay on the compact local model for stable latency.
@@ -276,7 +280,7 @@ export function OverviewDashboard() {
           </div>
         ) : (
           <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {(jobsData?.sources.adapters || []).map((adapter) => (
+            {(jobsData?.sources?.adapters || []).map((adapter) => (
               <div
                 key={adapter.id}
                 className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4"

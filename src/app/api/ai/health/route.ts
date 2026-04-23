@@ -72,12 +72,12 @@ export async function GET() {
       {
         health: {
           available: false,
-          provider: "ollama",
-          mode: "local",
-          compatibilityMode: "ollama",
+          provider: "gemini",
+          mode: "cloud",
+          compatibilityMode: "openai",
           error: err instanceof Error ? err.message : "Unknown error",
           checkedAt: new Date().toISOString(),
-          endpoint: process.env.OLLAMA_BASE_URL || (process.env.NODE_ENV === "production" ? "" : "http://localhost:11434"),
+          endpoint: "gemini",
           primaryModel: null,
           fallbackModel: null,
           responseTimeMs: null,

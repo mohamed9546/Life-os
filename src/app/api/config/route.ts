@@ -42,6 +42,34 @@ export async function PUT(request: NextRequest) {
       worker: body.worker || current.worker,
     };
 
+    // Automatically sync worker tasks with the job sources state
+    if (body.jobSources) {
+      const { FETCH_TASK_SOURCE_MAP, DEFAULT_TASK_CONFIGS } = await import("@/lib/worker/task-registry");
+      const newTasks = [...(merged.worker.tasks || [])];
+      
+      for (const [sourceId, sourceConfig] of Object.entries(merged.jobSources)) {
+        const taskId = Object.entries(FETCH_TASK_SOURCE_MAP).find(
+          ([_, mapSourceId]) => mapSourceId === sourceId
+        )?.[0];
+
+        if (taskId && sourceConfig && "enabled" in sourceConfig) {
+          const isEnabled = Boolean((sourceConfig as any).enabled);
+          const existing = newTasks.find(t => t.id === taskId);
+          
+          if (existing) {
+            existing.enabled = isEnabled;
+          } else {
+            // Check if it differs from default, if so add an override
+            const def = DEFAULT_TASK_CONFIGS.find(t => t.id === taskId);
+            if (def && def.enabled !== isEnabled) {
+              newTasks.push({ id: taskId, enabled: isEnabled } as any);
+            }
+          }
+        }
+      }
+      merged.worker.tasks = newTasks;
+    }
+
     await writeObject(ConfigFiles.APP_CONFIG, merged);
     return NextResponse.json(merged);
   } catch (err) {

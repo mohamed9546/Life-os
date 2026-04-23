@@ -145,7 +145,7 @@ export function AIControlRoom() {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">
             Live default
           </p>
-          <p className="text-lg font-semibold text-text-primary mt-3">gemma4:e2b</p>
+          <p className="text-lg font-semibold text-text-primary mt-3">{config.model || "—"}</p>
           <p className="text-sm text-text-secondary mt-2">
             Standard app flows should stay on the compact model for predictable latency and
             fewer local memory failures.
@@ -214,29 +214,58 @@ export function AIControlRoom() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="label">Ollama base URL</label>
-          <input
-            className="input"
-            value={config.baseUrl}
-            onChange={(event) => updateConfig({ baseUrl: event.target.value })}
-          />
-        </div>
-        <div>
-          <label className="label">Compatibility mode</label>
+          <label className="label">Provider</label>
           <select
             className="input"
-            value={config.compatibilityMode}
-            onChange={(event) =>
-              updateConfig({
-                compatibilityMode: event.target.value as AIConfig["compatibilityMode"],
-              })
-            }
+            value={config.provider}
+            onChange={(event) => {
+              const provider = event.target.value as AIConfig["provider"];
+              updateConfig({ provider, mode: provider === "gemini" ? "cloud" : "local" });
+            }}
           >
-            <option value="ollama">Ollama native</option>
-            <option value="openai">OpenAI-compatible</option>
-            <option value="anthropic">Anthropic-compatible</option>
+            <option value="gemini">Gemini (Google AI)</option>
+            <option value="ollama">Ollama (local)</option>
           </select>
         </div>
+        {config.provider === "gemini" ? (
+          <div>
+            <label className="label">Gemini API key</label>
+            <input
+              className="input"
+              type="password"
+              placeholder="Set via GEMINI_API_KEY env var or enter here"
+              value={config.apiKey || ""}
+              onChange={(event) => updateConfig({ apiKey: event.target.value || null })}
+            />
+          </div>
+        ) : (
+          <div>
+            <label className="label">Base URL</label>
+            <input
+              className="input"
+              value={config.baseUrl}
+              onChange={(event) => updateConfig({ baseUrl: event.target.value })}
+            />
+          </div>
+        )}
+        {config.provider === "ollama" && (
+          <div>
+            <label className="label">Compatibility mode</label>
+            <select
+              className="input"
+              value={config.compatibilityMode}
+              onChange={(event) =>
+                updateConfig({
+                  compatibilityMode: event.target.value as AIConfig["compatibilityMode"],
+                })
+              }
+            >
+              <option value="ollama">Ollama native</option>
+              <option value="openai">OpenAI-compatible</option>
+              <option value="anthropic">Anthropic-compatible</option>
+            </select>
+          </div>
+        )}
         <div>
           <label className="label">Primary model</label>
           <input

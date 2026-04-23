@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Send, Loader2, MessageSquare, Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
+import { useAIHealth } from "@/hooks/use-ai-health";
 
 interface Message { role: "user" | "assistant"; content: string; ts: string; }
 
@@ -20,6 +21,8 @@ export function AIChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { health, config } = useAIHealth(60_000);
+  const agentLabel = health?.primaryModel || config?.model || "Life OS AI";
 
   useEffect(() => {
     fetch("/api/ai/chat")
@@ -64,7 +67,7 @@ export function AIChat() {
             <div className="w-14 h-14 rounded-2xl bg-accent-subtle border border-accent/20 flex items-center justify-center mx-auto mb-4">
               <Sparkles size={24} className="text-accent" />
             </div>
-            <h2 className="text-sm font-semibold text-text-primary mb-1">Life OS AI</h2>
+            <h2 className="text-sm font-semibold text-text-primary mb-1">{agentLabel}</h2>
             <p className="text-xs text-text-tertiary max-w-xs mx-auto">Ask me anything about your career, money, routines, or goals.</p>
           </div>
         )}
