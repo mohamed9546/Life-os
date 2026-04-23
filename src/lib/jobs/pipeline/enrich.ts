@@ -21,6 +21,7 @@ import { evaluateJobFit } from "@/lib/ai/tasks/evaluate-job";
 import { generateDedupeKey } from "@/lib/jobs/sources/normalize";
 import { checkAIRateLimit } from "@/lib/ai/rate-limiter";
 import { buildContactStrategy } from "@/lib/enrichment";
+import { evaluateRawJobRelevance } from "./relevance";
 
 type EnrichmentStage = "parse" | "evaluate" | "contacts" | "job";
 
@@ -120,26 +121,13 @@ export async function enrichJobs(
       continue;
     }
 
-    const lowerTitle = raw.title.toLowerCase();
-
-    // Fast Pre-Filter Gate: Reject blatant mismatch families before wasting AI calls
-    // Negative keywords from prompt Section 5
-    const strictNegatives = ["tax","accountant","audit","payroll","finance","senior","lead","principal","director","head of","manager","microbiologist","laboratory","wet lab","bench scientist","field sales","sales rep","territory manager","business development","legal assistant","superintendent pharmacist","pharmacist","locum","dispensary","veterinary","dental sales","insurance","claims handler","biomedical scientist","5+ years","7+ years","line management","GPhC registration"];
-    
-    const matchedNegative = strictNegatives.find(kw => lowerTitle.includes(kw.toLowerCase()));
-
-    if (matchedNegative) {
+    const relevance = evaluateRawJobRelevance(raw);
+    if (relevance.hardReject) {
       skipped.push({
         raw,
-        reason: `Pre-filter gate: title matches strict negative heuristic (${matchedNegative})`
+        reason: `Pre-rank relevance gate: ${relevance.reasons.join(" ")}`
       });
       continue;
-    }
-
-    // Heuristic rejection for generic financial/legal titles that might slip through
-    if (lowerTitle.includes("trainee") && (lowerTitle.includes("audit") || lowerTitle.includes("tax"))) {
-       skipped.push({ raw, reason: "Pre-filter gate: Financial audit/tax trainee rejected" });
-       continue;
     }
 
     const rateCheck = await checkAIRateLimit("parse-job");

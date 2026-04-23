@@ -8,6 +8,7 @@ import {
 import { Collections, readCollection, writeCollection } from "@/lib/storage";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
+  SOURCE_CATALOG,
   createDefaultCareerProfile,
   createDefaultSavedSearches,
   createDefaultSourcePreferences,
@@ -48,11 +49,18 @@ async function loadFallbackProfile(userId: string, email: string) {
 async function loadFallbackSavedSearches(userId: string) {
   const searches = await readCollection<SavedSearch>(Collections.SAVED_SEARCHES);
   const existing = searches.filter((search) => search.userId === userId);
+  const defaults = createDefaultSavedSearches(userId);
   if (existing.length > 0) {
+    const existingIds = new Set(existing.map((search) => search.id));
+    const missing = defaults.filter((search) => !existingIds.has(search.id));
+    if (missing.length > 0) {
+      await writeCollection(Collections.SAVED_SEARCHES, [...searches, ...missing]);
+      return [...existing, ...missing];
+    }
     return existing;
   }
 
-  const created = createDefaultSavedSearches(userId);
+  const created = defaults;
   await writeCollection(Collections.SAVED_SEARCHES, [...searches, ...created]);
   return created;
 }
@@ -62,11 +70,20 @@ async function loadFallbackSourcePreferences(userId: string) {
     Collections.SOURCE_PREFERENCES
   );
   const existing = sources.filter((source) => source.userId === userId);
+  const defaults = createDefaultSourcePreferences(userId);
   if (existing.length > 0) {
-    return existing;
+    const existingSourceIds = new Set(existing.map((source) => source.sourceId));
+    const missing = defaults.filter((source) => !existingSourceIds.has(source.sourceId));
+    if (missing.length > 0) {
+      await writeCollection(Collections.SOURCE_PREFERENCES, [...sources, ...missing]);
+      return [...existing, ...missing];
+    }
+    return existing.filter((source) =>
+      SOURCE_CATALOG.some((catalogSource) => catalogSource.id === source.sourceId)
+    );
   }
 
-  const created = createDefaultSourcePreferences(userId);
+  const created = defaults;
   await writeCollection(Collections.SOURCE_PREFERENCES, [...sources, ...created]);
   return created;
 }
@@ -139,6 +156,17 @@ export async function getUserSettings(
         userId,
         createDefaultSavedSearches(userId)
       );
+    } else {
+      const existingIds = new Set(savedSearches.map((search) => search.id));
+      const missing = createDefaultSavedSearches(userId).filter(
+        (search) => !existingIds.has(search.id)
+      );
+      if (missing.length > 0) {
+        savedSearches = await replaceSavedSearches(userId, [
+          ...savedSearches,
+          ...missing,
+        ]);
+      }
     }
 
     if (sourcePreferences.length === 0) {
@@ -146,6 +174,19 @@ export async function getUserSettings(
         userId,
         createDefaultSourcePreferences(userId)
       );
+    } else {
+      const existingSourceIds = new Set(
+        sourcePreferences.map((source) => source.sourceId)
+      );
+      const missing = createDefaultSourcePreferences(userId).filter(
+        (source) => !existingSourceIds.has(source.sourceId)
+      );
+      if (missing.length > 0) {
+        sourcePreferences = await replaceSourcePreferences(userId, [
+          ...sourcePreferences,
+          ...missing,
+        ]);
+      }
     }
 
     return {

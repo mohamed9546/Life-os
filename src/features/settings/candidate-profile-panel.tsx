@@ -18,6 +18,7 @@ export function CandidateProfilePanel() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingTarget, setSavingTarget] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -114,6 +115,41 @@ export function CandidateProfilePanel() {
     }
   };
 
+  const saveProfilePatch = async (
+    patch: Partial<CandidateProfileSeed>,
+    label: string
+  ) => {
+    const profile = normalizeCandidateProfile({
+      ...(data?.profile || {}),
+      ...patch,
+    });
+
+    setSavingTarget(label);
+    setError(null);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/profile/candidate", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile }),
+      });
+      const payload = await assertJsonOk<
+        CandidateProfileResponse & { error?: string }
+      >(response, `Failed to save ${label}`);
+
+      setData({
+        profile: payload.profile || profile,
+        draft: payload.draft ?? data?.draft ?? null,
+      });
+      setMessage(`${label} saved`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to save ${label}`);
+    } finally {
+      setSavingTarget(null);
+    }
+  };
+
   const approveDraft = async () => {
     setSaving(true);
     setError(null);
@@ -203,16 +239,22 @@ export function CandidateProfilePanel() {
           label="Full name"
           value={profile.fullName}
           onChange={(value) => updateProfileField("fullName", value)}
+          onSave={() => void saveProfilePatch({ fullName: profile.fullName }, "Full name")}
+          saving={savingTarget === "Full name"}
         />
         <Field
           label="Headline"
           value={profile.headline}
           onChange={(value) => updateProfileField("headline", value)}
+          onSave={() => void saveProfilePatch({ headline: profile.headline }, "Headline")}
+          saving={savingTarget === "Headline"}
         />
         <Field
           label="Location"
           value={profile.location}
           onChange={(value) => updateProfileField("location", value)}
+          onSave={() => void saveProfilePatch({ location: profile.location }, "Location")}
+          saving={savingTarget === "Location"}
         />
         <Field
           label="Target titles"
@@ -223,6 +265,8 @@ export function CandidateProfilePanel() {
               value.split(",").map((item) => item.trim()).filter(Boolean)
             )
           }
+          onSave={() => void saveProfilePatch({ targetTitles: profile.targetTitles }, "Target titles")}
+          saving={savingTarget === "Target titles"}
         />
       </div>
 
@@ -231,11 +275,20 @@ export function CandidateProfilePanel() {
           label="Summary"
           value={profile.summary}
           onChange={(value) => updateProfileField("summary", value)}
+          onSave={() => void saveProfilePatch({ summary: profile.summary }, "Summary")}
+          saving={savingTarget === "Summary"}
         />
         <TextAreaField
           label="Transition narrative"
           value={profile.transitionNarrative}
           onChange={(value) => updateProfileField("transitionNarrative", value)}
+          onSave={() =>
+            void saveProfilePatch(
+              { transitionNarrative: profile.transitionNarrative },
+              "Transition narrative"
+            )
+          }
+          saving={savingTarget === "Transition narrative"}
         />
         <TextAreaField
           label="Strengths"
@@ -246,6 +299,8 @@ export function CandidateProfilePanel() {
               value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
             )
           }
+          onSave={() => void saveProfilePatch({ strengths: profile.strengths }, "Strengths")}
+          saving={savingTarget === "Strengths"}
         />
         <TextAreaField
           label="Experience highlights"
@@ -256,6 +311,45 @@ export function CandidateProfilePanel() {
               value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
             )
           }
+          onSave={() =>
+            void saveProfilePatch(
+              { experienceHighlights: profile.experienceHighlights },
+              "Experience highlights"
+            )
+          }
+          saving={savingTarget === "Experience highlights"}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <TextAreaField
+          label="Education"
+          value={profile.education.join("\n")}
+          onChange={(value) =>
+            updateProfileField(
+              "education",
+              value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+            )
+          }
+          onSave={() => void saveProfilePatch({ education: profile.education }, "Education")}
+          saving={savingTarget === "Education"}
+        />
+        <TextAreaField
+          label="Location constraints"
+          value={profile.locationConstraints.join("\n")}
+          onChange={(value) =>
+            updateProfileField(
+              "locationConstraints",
+              value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+            )
+          }
+          onSave={() =>
+            void saveProfilePatch(
+              { locationConstraints: profile.locationConstraints },
+              "Location constraints"
+            )
+          }
+          saving={savingTarget === "Location constraints"}
         />
       </div>
 
@@ -273,14 +367,25 @@ function Field({
   label,
   value,
   onChange,
+  onSave,
+  saving,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onSave?: () => void;
+  saving?: boolean;
 }) {
   return (
     <div>
-      <label className="label">{label}</label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="label">{label}</label>
+        {onSave && (
+          <button type="button" className="btn-secondary btn-sm" onClick={onSave} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </button>
+        )}
+      </div>
       <input className="input" value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
@@ -290,14 +395,25 @@ function TextAreaField({
   label,
   value,
   onChange,
+  onSave,
+  saving,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onSave?: () => void;
+  saving?: boolean;
 }) {
   return (
     <div>
-      <label className="label">{label}</label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="label">{label}</label>
+        {onSave && (
+          <button type="button" className="btn-secondary btn-sm" onClick={onSave} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </button>
+        )}
+      </div>
       <textarea
         className="textarea min-h-28"
         value={value}

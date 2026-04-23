@@ -32,7 +32,7 @@ interface RSSJobItem {
 
 export class IndeedAdapter implements JobSourceAdapter {
   readonly sourceId = "indeed";
-  readonly displayName = "Indeed (RSS, deprecated)";
+  readonly displayName = "Indeed (guarded RSS)";
 
   private async getConfig() {
     const appConfig = await getAppConfig();
@@ -73,7 +73,7 @@ export class IndeedAdapter implements JobSourceAdapter {
         params.set("q", `${keywords} £${query.salaryMin}+`);
       }
 
-      const url = `https://www.indeed.co.uk/rss?${params.toString()}`;
+      const url = `https://uk.indeed.com/rss?${params.toString()}`;
 
       console.log(
         `[indeed] Fetching RSS: ${query.keywords.join(" ")} in ${query.location || "UK"}`
@@ -93,6 +93,12 @@ export class IndeedAdapter implements JobSourceAdapter {
       }
 
       const xmlText = await response.text();
+      if (/Security Check|INDEED_CLOUDFLARE_STATIC_PAGE|Additional Verification Required/i.test(xmlText)) {
+        throw new Error(
+          "Indeed returned an anti-bot/security-check page, so direct free fetching is unavailable for this run."
+        );
+      }
+
       const rssItems = parseRSSItems(xmlText);
 
       const maxResults = query.maxResults || 25;

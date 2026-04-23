@@ -15,6 +15,8 @@ export function getDefaultAppConfig(): AppConfig {
     jobSources: {
       adzuna: { enabled: true, appId: adzunaAppId, appKey: adzunaAppKey, country: "gb" },
       reed: { enabled: true, apiKey: reedApiKey },
+      jobsac: { enabled: true },
+      totaljobs: { enabled: true },
       jooble: { enabled: true, apiKey: joobleApiKey },
       serpApi: {
         enabled: true,
@@ -75,6 +77,14 @@ export async function getAppConfig(): Promise<AppConfig> {
         ...defaults.jobSources.reed,
         ...stored.jobSources?.reed,
         apiKey: stored.jobSources?.reed?.apiKey || defaults.jobSources.reed.apiKey,
+      },
+      jobsac: {
+        ...defaults.jobSources.jobsac,
+        ...stored.jobSources?.jobsac,
+      },
+      totaljobs: {
+        ...defaults.jobSources.totaljobs,
+        ...stored.jobSources?.totaljobs,
       },
       jooble: {
         ...defaults.jobSources.jooble,

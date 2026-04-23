@@ -13,6 +13,8 @@ import { JobSourceAdapter } from "./types";
 import { AdzunaAdapter } from "./adzuna";
 import { ReedAdapter } from "./reed";
 import { SerpApiAdapter } from "./serpapi";
+import { JobsAcAdapter } from "./jobsac";
+import { TotaljobsAdapter } from "./totaljobs";
 
 // Company-board scrapers (no key; built-in company list)
 import { GreenhouseAdapter } from "./greenhouse";
@@ -42,6 +44,8 @@ export function getAllAdapters(): JobSourceAdapter[] {
     // Reliable beta sources
     new AdzunaAdapter(),
     new ReedAdapter(),
+    new JobsAcAdapter(),
+    new TotaljobsAdapter(),
     new SerpApiAdapter(),
     new GreenhouseAdapter(),
     new LeverAdapter(),

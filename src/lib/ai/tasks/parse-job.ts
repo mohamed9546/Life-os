@@ -21,8 +21,13 @@ const FINANCIAL_OVERRIDE_TERMS = [
   "tax advisor",
   "tax consultant",
   "tax accountant",
+  "tax assistant",
+  "tax analyst",
   "tax manager",
+  "payroll",
   "audit manager",
+  "audit trainee",
+  "financial audit",
   "financial analyst",
   "finance manager",
   "accountancy",
@@ -36,15 +41,32 @@ const TRACK_KEYWORDS = {
     "clinical trial",
     "clinical operations",
     "clinical trial assistant",
+    "clinical operations assistant",
+    "clinical operations coordinator",
+    "clinical study assistant",
+    "clinical study coordinator",
     "trial coordinator",
+    "trial administrator",
     "study coordinator",
+    "study admin",
     "site activation",
     "study startup",
     "study start-up",
+    "study start up",
     "site management",
+    "site management support",
+    "clinical project assistant",
+    "clinical project support",
     "trial master file",
     "tmf",
+    "etmf",
+    "isf",
+    "essential documents",
+    "ctms",
+    "protocol compliance",
     "cra",
+    "in-house cra",
+    "junior cra",
     "clinical research associate",
   ],
   regulatory: [
@@ -52,6 +74,8 @@ const TRACK_KEYWORDS = {
     "submissions",
     "regulatory affairs",
     "regulatory operations",
+    "regulatory affairs assistant",
+    "regulatory operations assistant",
     "ctd",
     "mhra",
     "ema",
@@ -61,9 +85,11 @@ const TRACK_KEYWORDS = {
   qa: [
     "quality assurance",
     "quality systems",
+    "quality systems associate",
     "gmp",
     "good manufacturing practice",
     "document control",
+    "document control associate",
     "deviation",
     "deviation management",
     "capa",
@@ -85,6 +111,7 @@ const TRACK_KEYWORDS = {
     "adverse event",
     "signal detection",
     "drug safety associate",
+    "pharmacovigilance associate",
   ],
   medinfo: [
     "medical information",
@@ -295,6 +322,15 @@ function buildDeterministicFallback(
       : []),
     ...(lower.includes("laboratory") || lower.includes("lab-based") || lower.includes("bench work")
       ? ["Role appears lab-heavy relative to the target transition path."]
+      : []),
+    ...(lower.includes("tax") || lower.includes("payroll") || lower.includes("accountant") || lower.includes("financial audit")
+      ? ["Role appears to be finance/tax/accounting rather than regulated healthcare."]
+      : []),
+    ...(lower.includes("field sales") || lower.includes("territory manager")
+      ? ["Role appears to be field sales or territory coverage."]
+      : []),
+    ...(lower.includes("gphc registration essential")
+      ? ["GPhC registration is listed as essential."]
       : []),
     ...(detectSeniority(rawText) === "senior"
       ? ["Seniority expectations may be above the target transition level."]

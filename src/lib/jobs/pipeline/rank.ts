@@ -11,6 +11,7 @@ import {
   getJobRankingState,
   hasOutreachDraft,
 } from "@/lib/jobs/selectors";
+import { evaluateEnrichedJobRelevance } from "./relevance";
 
 export interface RankingResult {
   ranked: EnrichedJob[];
@@ -106,6 +107,7 @@ export function rankJobs(jobs: EnrichedJob[]): RankingResult {
 function computeSortScore(job: EnrichedJob): number {
   const fit = job.fit?.data;
   if (!fit) return 0;
+  const relevance = evaluateEnrichedJobRelevance(job);
 
   let score = 0;
 
@@ -126,6 +128,16 @@ function computeSortScore(job: EnrichedJob): number {
 
   // Confidence bonus (0-1 → 0-15)
   score += fit.confidence * 15;
+  score += relevance.bonus;
+  score -= relevance.penalty;
+
+  if (relevance.hardReject) {
+    score -= 250;
+  }
+
+  if (relevance.irelandRelevant) {
+    score -= 40;
+  }
 
   // Recency bonus — newer jobs score slightly higher
   const postedAt = job.raw.postedAt;
@@ -142,6 +154,8 @@ function computeSortScore(job: EnrichedJob): number {
   const sourceBonus: Record<string, number> = {
     greenhouse: 10,
     lever: 10,
+    jobsac: 9,
+    totaljobs: 8,
     adzuna: 8,
     reed: 8,
     serpapi: 4,

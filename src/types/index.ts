@@ -463,6 +463,12 @@ export interface AppConfig {
       enabled: boolean;
       apiKey: string;
     };
+    jobsac: {
+      enabled: boolean;
+    };
+    totaljobs: {
+      enabled: boolean;
+    };
     jooble: {
       enabled: boolean;
       apiKey: string;

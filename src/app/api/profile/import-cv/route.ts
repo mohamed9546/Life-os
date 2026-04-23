@@ -1,11 +1,5 @@
 import { NextResponse } from "next/server";
 import { requireAppUser } from "@/lib/auth/session";
-import { extractCandidateProfile } from "@/lib/ai";
-import { extractTextFromPdfUpload } from "@/lib/profile/pdf";
-import {
-  saveCandidateProfileDraft,
-} from "@/lib/profile/candidate-profile";
-import { saveImportRecord } from "@/lib/imports/storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,6 +11,13 @@ export async function POST(request: Request) {
   try {
     const user = await requireAppUser();
     userId = user.id;
+    const [{ extractCandidateProfile }, { extractTextFromPdfUpload }, { saveCandidateProfileDraft }, { saveImportRecord }] =
+      await Promise.all([
+        import("@/lib/ai"),
+        import("@/lib/profile/pdf"),
+        import("@/lib/profile/candidate-profile"),
+        import("@/lib/imports/storage"),
+      ]);
 
     const formData = await request.formData();
     const uploads = formData.getAll("files").filter((item): item is File => item instanceof File);
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
   } catch (err) {
     if (userId) {
       try {
+        const { saveImportRecord } = await import("@/lib/imports/storage");
         await saveImportRecord(
           {
             type: "cv-pdf",

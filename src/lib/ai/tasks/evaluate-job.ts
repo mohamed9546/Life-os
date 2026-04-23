@@ -13,12 +13,14 @@ import {
 import { callAI } from "../client";
 import { JobFitEvaluationSchema, validateAIOutput } from "../schemas";
 import { loadUserProfilePromptBlock } from "../user-profile";
+import { evaluateRawJobRelevance } from "@/lib/jobs/pipeline/relevance";
 
-const SYSTEM_PROMPT = `You are a career strategy AI specialising in pharmacy-to-industry transitions in the UK life sciences sector.
-The candidate is a qualified pharmacist moving OUT of retail/community pharmacy into desk-based regulated industry roles.
-Your primary target lanes: Pharmacovigilance (PV), Medical Information, QA/Compliance, Regulatory Affairs, Clinical Operations, Clinical Trial Assistant (CTA).
-You must reward roles that leverage community pharmacy transferable skills: GDocP, GCP, adverse event reporting, medicines management, patient triage, Controlled Drug governance.
-You must severely penalise roles that keep the candidate in retail/community pharmacy, financial services, or lab-bench science.
+const SYSTEM_PROMPT = `You are a career strategy AI specialising in entry-level UK life sciences, clinical operations, QA, regulatory, pharmacovigilance, and medical information transitions.
+Treat the candidate as entry/support-level, not senior. They have MSc Clinical Pharmacology, GCP training, clinical research internship exposure, regulated healthcare documentation experience, SOP/compliance-heavy workflow exposure, and governance/controlled-document exposure.
+Strong-fit work includes regulated documentation, clinical trial support, study coordination, SOP/compliance-heavy admin, healthcare administration, research governance, and regulated support functions.
+Primary target titles: Clinical Trial Assistant, Clinical Research Coordinator, Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, Study Start-Up Assistant/Coordinator, Site Activation Assistant/Coordinator, Trial Administrator, Clinical Project Assistant, In-House CRA, and Junior CRA only if clearly junior/entry-level.
+Secondary target titles: QA Associate, Quality Systems Associate, Document Control Associate, Regulatory Affairs Assistant, Regulatory Operations Assistant, Pharmacovigilance Associate, Drug Safety Associate, Medical Information Associate, Research Governance, and Research Support.
+Severely penalise tax/accounting/payroll/finance operations, legal assistant roles, wet-lab execution, field sales/territory roles, GPhC-essential roles, community-pharmacy-only roles, and senior/leadership roles.
 Always respond with valid JSON matching the exact schema requested.
 Be realistic and strategic — never flattering. This candidate has transferable skills but needs stepping-stone roles, not stretch goals.`;
 
@@ -77,11 +79,11 @@ SCORING GUIDE:
 - redFlagScore 51-100: Significant red flags
 
 SCORING RULES — REWARDS (apply to fitScore):
-- Role is in PV, Drug Safety, Medical Information, QA Compliance, Regulatory Submissions, or Clinical Operations: +20
-- Role explicitly values GDocP, GCP, adverse event reporting, medicines management, or patient triage: +15
-- Stepping-stone role: Clinical Trial Assistant, Trial Coordinator, Study Start-Up, Site Activation, or TMF Coordinator: +15
-- Entry/junior/assistant/coordinator seniority that does not require prior industry experience: +10
-- Desk-based, remote/hybrid, UK-based or Ireland: +5
+- Primary target role: Clinical Trial Assistant, Clinical Research Coordinator, Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, Study Start-Up, Site Activation, Trial Administrator, Clinical Project Assistant, In-House CRA, or clearly junior CRA: +25
+- Secondary target role: QA Associate, Quality Systems Associate, Document Control, Regulatory Affairs/Operations Assistant, Pharmacovigilance/Drug Safety Associate, Medical Information Associate, Research Governance, or Research Support: +18
+- Role explicitly values ICH-GCP, GCP, TMF/eTMF, ISF, essential documents, CTMS, SOP, protocol compliance, submissions support, filing/archiving, audit readiness, governance, or clinical documentation: +15
+- Entry/junior/assistant/coordinator/support/administrator seniority that does not require prior industry experience: +12
+- Glasgow, Scotland, UK remote/hybrid, or strong London hybrid fit: +5
 
 SCORING RULES — PENALTIES (apply to fitScore and redFlagScore):
 - Role is Community Pharmacy Manager, Locum Pharmacist, Retail Pharmacy, Dispensary Manager, or any pharmacy retail role: fitScore -40, redFlagScore +30 (candidate is deliberately leaving retail)
@@ -89,6 +91,8 @@ SCORING RULES — PENALTIES (apply to fitScore and redFlagScore):
 - Role is lab-heavy bench scientist, molecular biologist, or requires active wet-lab work unrelated to oversight: fitScore -25, redFlagScore +20
 - Role requires more than 5 years of industry experience (candidate is transitioning, not making a lateral move): fitScore -20
 - Senior/Director/VP with mandatory line management, extensive travel, or employer has strong visa/sponsorship barriers: fitScore -15, redFlagScore +15
+- Field sales, territory manager, business development representative, legal assistant, insurance, claims handler, veterinary, dental sales, or GPhC-registration-essential roles: fitScore -50, redFlagScore +40
+- Ireland-relevant roles can be flagged, but should not rank above strong UK/Scotland/London-hybrid matches unless explicitly requested.
 
 Priority bands:
 - high: fitScore >= 65 AND redFlagScore < 40
@@ -117,12 +121,34 @@ const TRACK_LABELS: Record<string, string> = {
 };
 
 function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
+  const relevance = evaluateRawJobRelevance({
+    source: "parsed",
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    salaryText: job.salaryText || undefined,
+    link: "",
+    employmentType: job.employmentType,
+    remoteType: job.remoteType,
+    description: [
+      job.summary,
+      ...job.mustHaves,
+      ...job.niceToHaves,
+      ...job.redFlags,
+      ...job.keywords,
+    ].join("\n"),
+    fetchedAt: new Date().toISOString(),
+  });
   const track = job.roleTrack || "other";
   const title = (job.title || "").toLowerCase();
   const seniority = (job.seniority || "").toLowerCase();
   const redFlags = job.redFlags || [];
 
   let fitScore = TRACK_BASE_SCORES[track] ?? 22;
+  fitScore += Math.round(relevance.bonus * 0.7);
+  fitScore -= Math.round(relevance.penalty * 0.8);
+  if (relevance.hardReject) fitScore -= 60;
+  if (relevance.irelandRelevant) fitScore -= 8;
 
   // Seniority adjustment
   if (/director|vp\b|vice president|head of/.test(seniority)) fitScore -= 20;
@@ -138,6 +164,7 @@ function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
   }
 
   let redFlagScore = Math.min(100, redFlags.length * 10);
+  redFlagScore += Math.min(60, Math.round(relevance.penalty * 0.5));
   if (/director|vp\b/.test(seniority)) redFlagScore += 15;
   if (job.mustHaves?.some(m => /visa|sponsor/i.test(m))) redFlagScore += 20;
   redFlagScore = Math.min(100, redFlagScore);
