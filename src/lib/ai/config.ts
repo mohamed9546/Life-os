@@ -216,7 +216,7 @@ function mergeTaskSettings(
   const merged = { ...DEFAULT_AI_CONFIG.taskSettings };
 
   for (const taskType of AI_TASK_ORDER) {
-    const override = overrides?.[taskType] || {};
+    const override: Partial<AIConfig["taskSettings"][AITaskType]> = overrides?.[taskType] ?? {};
     merged[taskType] = {
       ...DEFAULT_AI_CONFIG.taskSettings[taskType],
       ...override,
