@@ -88,338 +88,396 @@ export interface JobSourceAdapter {
  * - UK Remote / UK Hybrid
  */
 export const DEFAULT_SEARCH_QUERIES: JobSearchQuery[] = [
+  // =====================================================
+  // PRIMARY TARGET — Clinical Trial / Research roles
+  // =====================================================
+
   // --- Scotland (priority) ---
   {
-    keywords: ["quality assurance", "pharmaceutical"],
+    keywords: ["clinical trial assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
     location: "Glasgow",
     radius: 30,
     maxResults: 25,
   },
   {
-    keywords: ["regulatory affairs"],
+    keywords: ["clinical research coordinator"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal"],
     location: "Scotland",
     maxResults: 25,
   },
   {
-    keywords: ["pharmacovigilance"],
-    location: "Scotland",
-    maxResults: 25,
-  },
-  {
-    keywords: ["clinical research associate"],
-    location: "Scotland",
-    maxResults: 25,
-  },
-  {
-    keywords: ["clinical trial assistant"],
-    location: "Scotland",
-    maxResults: 25,
-  },
-  {
-    keywords: ["study coordinator", "clinical"],
-    location: "Scotland",
-    maxResults: 20,
-  },
-  {
-    keywords: ["quality systems", "GMP"],
-    location: "Scotland",
-    maxResults: 20,
-  },
-  {
-    keywords: ["compliance", "pharmaceutical"],
-    location: "Scotland",
-    maxResults: 20,
-  },
-  {
-    keywords: ["medical device", "regulatory affairs"],
-    location: "Scotland",
-    maxResults: 20,
-  },
-
-  // --- England pharma hubs ---
-  {
-    keywords: ["quality assurance", "pharmaceutical"],
-    location: "London",
-    maxResults: 25,
-  },
-  {
-    keywords: ["regulatory affairs", "pharmaceutical"],
-    location: "London",
-    maxResults: 25,
-  },
-  {
-    keywords: ["pharmacovigilance"],
-    location: "London",
-    maxResults: 25,
-  },
-  {
-    keywords: ["medical information", "pharmaceutical"],
-    location: "London",
-    maxResults: 20,
-  },
-  {
-    keywords: ["quality assurance", "GMP"],
-    location: "Cambridge",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["regulatory affairs"],
-    location: "Cambridge",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["pharmacovigilance"],
-    location: "Manchester",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["clinical research associate"],
-    location: "Manchester",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["quality assurance", "pharmaceutical"],
-    location: "Oxford",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["regulatory affairs", "medical device"],
-    location: "Oxford",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["quality systems", "compliance"],
-    location: "Leeds",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["pharmacovigilance", "drug safety"],
-    location: "Leeds",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["clinical trial assistant"],
-    location: "Birmingham",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["medical information"],
-    location: "Nottingham",
-    radius: 30,
-    maxResults: 20,
-  },
-  {
-    keywords: ["regulatory affairs"],
-    location: "Reading",
-    radius: 25,
-    maxResults: 20,
-  },
-
-  // --- UK-wide remote/hybrid ---
-  {
-    keywords: ["pharmacovigilance"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 25,
-  },
-  {
-    keywords: ["regulatory affairs"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 25,
-  },
-  {
-    keywords: ["quality assurance", "pharmaceutical"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 25,
-  },
-  {
-    keywords: ["medical information"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["clinical research"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["clinical trial assistant"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["quality systems", "compliance"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["medical device regulatory"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["regulatory operations"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["drug safety", "case processing"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["medical information", "scientific"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-  {
-    keywords: ["CTA", "clinical research"],
-    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "chartered tax", "tax advisor", "credit trading"],
-    location: "United Kingdom",
-    remoteOnly: true,
-    maxResults: 20,
-  },
-
-  // --- Broader keyword variants ---
-  {
-    keywords: ["QA", "GMP"],
+    keywords: ["clinical operations assistant"],
     negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
-    location: "United Kingdom",
-    maxResults: 20,
+    location: "Scotland",
+    maxResults: 25,
   },
   {
-    keywords: ["drug safety"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["medical affairs", "pharmaceutical"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["clinical trials", "associate"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["QA officer"],
+    keywords: ["study start-up", "coordinator"],
     negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
-    location: "United Kingdom",
+    location: "Scotland",
     maxResults: 20,
   },
   {
-    keywords: ["quality specialist", "GDocP"],
-    location: "United Kingdom",
+    keywords: ["site activation", "assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Scotland",
     maxResults: 20,
   },
   {
-    keywords: ["compliance officer", "life sciences"],
-    location: "United Kingdom",
+    keywords: ["trial administrator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Scotland",
     maxResults: 20,
   },
   {
-    keywords: ["regulatory associate", "medical device"],
-    location: "United Kingdom",
+    keywords: ["clinical project assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Scotland",
     maxResults: 20,
   },
+
+  // --- UK-wide primary targets ---
   {
-    keywords: ["regulatory operations", "submission"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["drug safety associate"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["case processor", "pharmacovigilance"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["medical information associate"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["scientific information", "medical"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["clinical trial assistant", "site activation"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["TMF", "clinical trial assistant"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["CRA", "clinical research associate"],
+    keywords: ["clinical trial assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
     location: "United Kingdom",
     maxResults: 25,
   },
   {
-    keywords: ["CRA I", "monitoring"],
+    keywords: ["clinical research coordinator"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal"],
     location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["site management associate"],
-    location: "United Kingdom",
-    maxResults: 20,
-  },
-  {
-    keywords: ["study start up associate"],
-    location: "United Kingdom",
-    maxResults: 20,
+    maxResults: 25,
   },
   {
     keywords: ["clinical operations coordinator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical study coordinator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["study start-up assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
     location: "United Kingdom",
     maxResults: 20,
   },
   {
-    keywords: ["trial coordinator", "clinical"],
+    keywords: ["study start-up coordinator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
     location: "United Kingdom",
     maxResults: 20,
   },
   {
-    keywords: ["site activation specialist"],
+    keywords: ["site activation coordinator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["trial administrator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
     location: "United Kingdom",
     maxResults: 20,
   },
   {
     keywords: ["clinical project assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
     location: "United Kingdom",
     maxResults: 20,
   },
   {
-    keywords: ["research assistant", "clinical trials"],
+    keywords: ["junior CRA"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
     location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["in-house CRA"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["TMF", "clinical trial"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["eTMF", "coordinator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["ICH-GCP", "assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+
+  // --- UK-wide remote/hybrid primary ---
+  {
+    keywords: ["clinical trial assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical research coordinator"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 25,
+  },
+  {
+    keywords: ["study start-up", "clinical"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 20,
+  },
+  {
+    keywords: ["clinical operations", "assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 20,
+  },
+
+  // --- Ireland primary targets ---
+  {
+    keywords: ["clinical trial assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal"],
+    location: "Ireland",
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical research coordinator"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal"],
+    location: "Ireland",
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical operations coordinator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Ireland",
+    maxResults: 20,
+  },
+  {
+    keywords: ["study start-up", "coordinator"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Ireland",
+    maxResults: 20,
+  },
+  {
+    keywords: ["site activation", "clinical"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Ireland",
+    maxResults: 20,
+  },
+  {
+    keywords: ["clinical project assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Dublin",
+    radius: 50,
+    maxResults: 20,
+  },
+  {
+    keywords: ["junior CRA"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Ireland",
+    maxResults: 20,
+  },
+
+  // =====================================================
+  // SECONDARY TARGET — QA, Regulatory, PV, MedInfo
+  // =====================================================
+
+  // --- Scotland secondary ---
+  {
+    keywords: ["quality assurance", "pharmaceutical"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "director"],
+    location: "Glasgow",
+    radius: 30,
+    maxResults: 25,
+  },
+  {
+    keywords: ["regulatory affairs", "assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Scotland",
+    maxResults: 25,
+  },
+  {
+    keywords: ["pharmacovigilance", "associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Scotland",
+    maxResults: 25,
+  },
+  {
+    keywords: ["document control", "pharmaceutical"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Scotland",
+    maxResults: 20,
+  },
+
+  // --- UK-wide secondary ---
+  {
+    keywords: ["QA associate", "pharmaceutical"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["quality systems", "compliance"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["regulatory affairs assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["regulatory operations", "associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["pharmacovigilance associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["drug safety associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["medical information associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["document control", "GMP"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+  {
+    keywords: ["research governance", "support"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    maxResults: 20,
+  },
+
+  // --- UK-wide remote secondary ---
+  {
+    keywords: ["pharmacovigilance"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "manager"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 25,
+  },
+  {
+    keywords: ["regulatory affairs"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "director"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 25,
+  },
+  {
+    keywords: ["drug safety", "case processing"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 20,
+  },
+  {
+    keywords: ["medical information"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 20,
+  },
+  {
+    keywords: ["quality assurance", "pharmaceutical"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "director"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 25,
+  },
+
+  // --- Ireland secondary ---
+  {
+    keywords: ["regulatory affairs", "assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Ireland",
+    maxResults: 20,
+  },
+  {
+    keywords: ["pharmacovigilance", "associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Ireland",
+    maxResults: 20,
+  },
+  {
+    keywords: ["quality assurance", "pharmaceutical"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "director"],
+    location: "Ireland",
+    maxResults: 20,
+  },
+  {
+    keywords: ["drug safety associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Ireland",
+    maxResults: 20,
+  },
+  {
+    keywords: ["document control", "pharmaceutical"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "Dublin",
+    radius: 50,
+    maxResults: 20,
+  },
+
+  // --- London (secondary, hybrid only if strong fit) ---
+  {
+    keywords: ["clinical trial assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead"],
+    location: "London",
+    maxResults: 20,
+  },
+  {
+    keywords: ["pharmacovigilance", "associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "London",
+    maxResults: 20,
+  },
+  {
+    keywords: ["regulatory affairs", "assistant"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "London",
+    maxResults: 20,
+  },
+  {
+    keywords: ["medical information", "associate"],
+    negativeKeywords: PHARMA_NEGATIVE_KEYWORDS,
+    location: "London",
     maxResults: 20,
   },
 ];
