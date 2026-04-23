@@ -1,8 +1,7 @@
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
@@ -23,20 +22,30 @@ ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_AoWyEf9yL7m5MFTSDeTGkg_X
 
 RUN npm run build
 
-# Production image — standalone output
+# Production image — standalone output + Playwright chromium
 FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Install Playwright chromium + its system deps (Debian packages pulled in by --with-deps).
+# Must run as root for apt-get; world-readable so the nextjs user can launch the browser.
+RUN npx --yes playwright@1.49.1 install --with-deps chromium \
+ && chmod -R a+rX /ms-playwright
+
+RUN groupadd --system --gid 1001 nodejs \
+ && useradd --system --uid 1001 --gid nodejs --shell /bin/false nextjs
 
 # Copy standalone server + static assets
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Explicitly include playwright runtime — Next's tracer can miss dynamic imports.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/playwright ./node_modules/playwright
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/playwright-core ./node_modules/playwright-core
 
 USER nextjs
 
