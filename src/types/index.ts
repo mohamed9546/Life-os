@@ -186,8 +186,8 @@ export interface JobFitEvaluation {
   whyNot: string[];
   strategicValue: string;
   likelyInterviewability: string;
-  actionRecommendation: string;
-  visaRisk?: { level: "none" | "low" | "medium" | "high"; reason: string };
+  actionRecommendation: "apply now" | "apply if time" | "skip";
+  visaRisk: "green" | "amber" | "red";
   confidence: Confidence;
 }
 

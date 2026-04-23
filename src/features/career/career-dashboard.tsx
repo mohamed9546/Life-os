@@ -92,7 +92,7 @@ export function CareerDashboard() {
       return new Date(j.followUpDate) <= new Date();
     }).length;
     const visaRiskCount = ranked.filter(
-      (j) => j.fit?.data?.visaRisk?.level === "high" || j.fit?.data?.visaRisk?.level === "medium"
+      (j) => j.fit?.data?.visaRisk === "red" || j.fit?.data?.visaRisk === "amber"
     ).length;
     return { avgFit, highPriority, applied, interviews, followUpsDue, visaRiskCount };
   }, [jobs.ranked, jobs.tracked]);
@@ -235,7 +235,7 @@ function CareerHero({
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <ActionButton
             variant="primary"
-            onClick={() => pipeline.runPipeline()}
+            onClick={async () => { await pipeline.runPipeline(); await jobs.refresh(); }}
             disabled={pipeline.running}
             className="gap-2"
           >
@@ -244,7 +244,7 @@ function CareerHero({
           </ActionButton>
           <ActionButton
             variant="secondary"
-            onClick={() => pipeline.runPipeline({ skipEnrich: true, skipRank: true })}
+            onClick={async () => { await pipeline.runPipeline({ skipEnrich: true, skipRank: true }); await jobs.refresh(); }}
             disabled={pipeline.running}
           >
             Fetch Only
@@ -778,16 +778,15 @@ function RankedJobCard({
                     ⚠ {fit.redFlagScore}
                   </span>
                 )}
-                {fit.visaRisk && fit.visaRisk.level !== "none" && (
-                  <span className={cn(
-                    "text-[9px] font-semibold px-1.5 py-0.5 rounded-full",
-                    fit.visaRisk.level === "high" ? "bg-rose-400/15 text-rose-300"
-                    : fit.visaRisk.level === "medium" ? "bg-amber-400/15 text-amber-300"
-                    : "bg-blue-400/15 text-blue-300"
-                  )}>
-                    Visa {fit.visaRisk.level}
-                  </span>
-                )}
+                {fit.visaRisk && fit.visaRisk !== "green" && (
+                    <span className={cn(
+                      "text-[9px] font-semibold px-1.5 py-0.5 rounded-full",
+                      fit.visaRisk === "red" ? "bg-rose-400/15 text-rose-300"
+                      : "bg-amber-400/15 text-amber-300"
+                    )}>
+                      Visa {fit.visaRisk}
+                    </span>
+                  )}
                 {parsed?.salaryText && (
                   <span className="text-[10px] text-slate-600 mt-1 text-right max-w-[80px] truncate">
                     {parsed.salaryText}

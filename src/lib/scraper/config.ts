@@ -14,7 +14,7 @@ export const DEFAULT_SCRAPER_CONFIG: ScraperConfig = {
     apiKey: "",
   },
   playwright: {
-    enabled: false,
+    enabled: true,
     headless: true,
     timeoutMs: 30_000,
   },

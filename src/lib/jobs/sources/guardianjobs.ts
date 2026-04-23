@@ -4,7 +4,6 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
-import { getAppConfig } from "@/lib/config/app-config";
 import {
   JobSourceAdapter,
   JobSearchQuery,
@@ -17,8 +16,8 @@ export class GuardianJobsAdapter implements JobSourceAdapter {
   readonly displayName = "Guardian Jobs (UK)";
 
   async isConfigured(): Promise<boolean> {
-    const config = await getAppConfig();
-    return config.jobSources.guardianjobs?.enabled ?? true;
+    // Guardian Jobs RSS returns 404 — disabled until the feed URL is confirmed working
+    return false;
   }
 
   async fetchJobs(query: JobSearchQuery): Promise<JobSourceResult> {

@@ -42,7 +42,7 @@ Nice to Haves: ${job.niceToHaves.join(", ") || "None listed"}
 Red Flags: ${job.redFlags.join(", ") || "None"}
 Summary: ${job.summary}
 
-Return exactly this JSON structure:
+  Return exactly this JSON structure:
 {
   "fitScore": 0-100,
   "redFlagScore": 0-100,
@@ -51,9 +51,20 @@ Return exactly this JSON structure:
   "whyNot": ["reasons this job is not ideal"],
   "strategicValue": "string explaining strategic career value",
   "likelyInterviewability": "string assessing chances of getting an interview",
-  "actionRecommendation": "string - what to do with this job",
+  "actionRecommendation": "apply now | apply if time | skip",
+  "visaRisk": "green | amber | red",
   "confidence": 0.0 to 1.0
 }
+
+VISA RISK LOGIC:
+- green: No explicit anti-visa wording, no permanent-right-to-work restriction
+- amber: "no sponsorship available", "must already have right to work", ambiguous but not explicitly anti-visa
+- red: "cannot hire visa holders", "must have permanent right to work", "no candidates on visas", "must not require sponsorship now or in future"
+
+ACTION RECOMMENDATION LOGIC:
+- apply now = strong fit, manageable risk, strategically valuable
+- apply if time = medium fit or amber constraints
+- skip = weak fit, irrelevant family, or strong visa/seniority mismatch
 
 SCORING GUIDE:
 - fitScore 70-100: Strong match for CTA, clinical operations, QA, regulatory, PV, or medinfo transition goals
@@ -161,11 +172,11 @@ function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
       fitScore >= 65 ? "Good — profile-role alignment looks strong"
       : fitScore >= 40 ? "Moderate — some alignment, review gaps"
       : "Low — significant gap between profile and role",
-    actionRecommendation:
-      priorityBand === "high" ? "Prioritise — apply soon"
-      : priorityBand === "medium" ? "Review and consider applying"
-      : priorityBand === "low" ? "Optional — apply only if nothing better"
-      : "Skip — outside transition targets",
+        actionRecommendation:
+      priorityBand === "high" ? "apply now"
+      : priorityBand === "medium" ? "apply if time"
+      : "skip",
+    visaRisk: redFlagScore > 40 ? "red" : redFlagScore > 20 ? "amber" : "green",
     confidence: 0.3,
   };
 }

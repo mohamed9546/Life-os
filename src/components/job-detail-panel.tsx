@@ -132,12 +132,21 @@ export function JobDetailPanel({
     <div className="card overflow-y-auto max-h-[calc(100vh-8rem)] animate-fade-in">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <SourceChip source={job.raw.source} />
-            {parsed?.roleTrack && parsed.roleTrack !== "other" && (
-              <span className="badge-neutral">{parsed.roleTrack}</span>
-            )}
-            {parsed?.remoteType && parsed.remoteType !== "unknown" && (
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+              <SourceChip source={job.raw.source} />
+              {parsed?.roleTrack && parsed.roleTrack !== "other" && (
+                <span className="badge-neutral">{parsed.roleTrack}</span>
+              )}
+              {fit?.visaRisk && (
+                <span className={`px-1.5 py-0.5 rounded text-2xs font-medium ${
+                  fit.visaRisk === 'red' ? 'bg-danger/10 text-danger' : 
+                  fit.visaRisk === 'amber' ? 'bg-warning/10 text-warning' : 
+                  'bg-success/10 text-success'
+                }`}>
+                  Visa: {fit.visaRisk}
+                </span>
+              )}
+              {parsed?.remoteType && parsed.remoteType !== "unknown" && (
               <span className="badge-neutral">{parsed.remoteType}</span>
             )}
             {parsed?.employmentType && parsed.employmentType !== "unknown" && (
@@ -187,24 +196,22 @@ export function JobDetailPanel({
         </div>
       )}
 
-      {fit?.visaRisk && fit.visaRisk.level !== "none" && (
-        <div className={cn(
-          "rounded-lg px-4 py-3 mb-5",
-          fit.visaRisk.level === "high" ? "bg-rose-400/10 border border-rose-400/20"
-          : fit.visaRisk.level === "medium" ? "bg-amber-400/10 border border-amber-400/20"
-          : "bg-blue-400/10 border border-blue-400/20"
-        )}>
-          <p className={cn(
-            "text-xs font-semibold mb-1",
-            fit.visaRisk.level === "high" ? "text-rose-300"
-            : fit.visaRisk.level === "medium" ? "text-amber-300"
-            : "text-blue-300"
+      {fit?.visaRisk && fit.visaRisk !== "green" && (
+          <div className={cn(
+            "rounded-lg px-4 py-3 mb-5",
+            fit.visaRisk === "red" ? "bg-rose-400/10 border border-rose-400/20"
+            : "bg-amber-400/10 border border-amber-400/20"
           )}>
-            Visa Risk: {fit.visaRisk.level.charAt(0).toUpperCase() + fit.visaRisk.level.slice(1)}
-          </p>
-          <p className="text-sm text-text-secondary">{fit.visaRisk.reason}</p>
-        </div>
-      )}
+            <p className={cn(
+              "text-xs font-semibold mb-1",
+              fit.visaRisk === "red" ? "text-rose-300"
+              : "text-amber-300"
+            )}>
+            Visa Risk: {fit.visaRisk.charAt(0).toUpperCase() + fit.visaRisk.slice(1)}
+            </p>
+            <p className="text-sm text-text-secondary">This role has a {fit.visaRisk} visa risk level based on the description.</p>
+          </div>
+        )}
 
       {fit?.actionRecommendation && (
         <div className="bg-accent-subtle rounded-lg px-4 py-3 mb-5">

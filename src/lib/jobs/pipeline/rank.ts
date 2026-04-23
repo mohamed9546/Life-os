@@ -181,6 +181,28 @@ function computeSortScore(job: EnrichedJob): number {
     score -= 10;
   }
 
+  // Location weighting based on prompt Section 6
+  const location = (job.parsed?.data?.location || job.raw.location || "").toLowerCase();
+  const remoteType = (job.parsed?.data?.remoteType || job.raw.remoteType || "unknown").toLowerCase();
+  
+  if (location.includes("glasgow") || location.includes("scotland")) {
+    score += 25; // Priority 1
+  } else if (remoteType === "remote" || remoteType === "hybrid") {
+    score += 15; // Priority 2
+  } else if (location.includes("london") && remoteType === "hybrid") {
+    score += 10; // Priority 3
+  } else if (location.length > 0 && remoteType === "onsite") {
+    score -= 20; // Penalize onsite distant roles
+  }
+
+  // Visa Risk weighting based on prompt Section 7
+  const visaRisk = fit.visaRisk;
+  if (visaRisk === "amber") {
+    score -= 30; // Deprioritize
+  } else if (visaRisk === "red") {
+    score -= 80; // Heavily deprioritize / almost reject
+  }
+
   return Math.round(score * 100) / 100;
 }
 

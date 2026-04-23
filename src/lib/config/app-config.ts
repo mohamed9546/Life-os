@@ -2,7 +2,7 @@ import { readObject, ConfigFiles } from "@/lib/storage";
 import { AppConfig } from "@/types";
 
 export function getDefaultAppConfig(): AppConfig {
-  const serpApiKey = "sk-bac84f45189242b897711e8db141c3f5s";
+  const serpApiKey = "f66ac90eb04f2a20d3a12d8996e95ad682e9cb8665cd5a089dc506acab21635f";
   const adzunaAppId = "2a471528";
   const adzunaAppKey = "2781950e31ec2cffd8f1fea99cea134b";
   const reedApiKey = "2bcc2781-5ae0-487f-bbe7-9a25813d17d2";

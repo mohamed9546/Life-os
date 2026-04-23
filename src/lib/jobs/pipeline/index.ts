@@ -215,7 +215,7 @@ async function fetchFromSources(
   
   console.log(`[pipeline] Proceeding with adapters:`, adapters.map(a => a.sourceId).join(', '));
 
-  const queries = opts.queries || DEFAULT_SEARCH_QUERIES;
+  const queries = opts.queries && opts.queries.length > 0 ? opts.queries : DEFAULT_SEARCH_QUERIES;
   const allJobs: RawJobItem[] = [];
   const fetchResults: FetchResult[] = [];
 

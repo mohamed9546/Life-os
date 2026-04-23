@@ -62,6 +62,15 @@ export function JobCard({
               {parsed?.remoteType && parsed.remoteType !== "unknown" && (
                 <span className="badge-neutral">{parsed.remoteType}</span>
               )}
+              {fit?.visaRisk && (
+                <span className={`px-1.5 py-0.5 rounded text-2xs font-medium ${
+                  fit.visaRisk === 'red' ? 'bg-danger/10 text-danger' : 
+                  fit.visaRisk === 'amber' ? 'bg-warning/10 text-warning' : 
+                  'bg-success/10 text-success'
+                }`}>
+                  Visa: {fit.visaRisk}
+                </span>
+              )}
               {hasIntel && <span className="badge-neutral">intel</span>}
               <span className="badge-neutral">
                 {contactCount > 0 ? `${contactCount} contacts` : "No contacts"}
@@ -88,6 +97,15 @@ export function JobCard({
             <SourceBadge source={source} />
             {parsed?.roleTrack && parsed.roleTrack !== "other" && (
               <span className="badge-neutral">{parsed.roleTrack}</span>
+            )}
+            {fit?.visaRisk && (
+              <span className={`px-1.5 py-0.5 rounded text-2xs font-medium ${
+                fit.visaRisk === 'red' ? 'bg-danger/10 text-danger' : 
+                fit.visaRisk === 'amber' ? 'bg-warning/10 text-warning' : 
+                'bg-success/10 text-success'
+              }`}>
+                Visa: {fit.visaRisk}
+              </span>
             )}
             <span className="badge-neutral">{contactState}</span>
           </div>

@@ -36,7 +36,8 @@ export const JobFitEvaluationSchema = z.object({
   whyNot: z.array(z.string()),
   strategicValue: z.string(),
   likelyInterviewability: z.string(),
-  actionRecommendation: z.string(),
+  actionRecommendation: z.enum(["apply now", "apply if time", "skip"]),
+  visaRisk: z.enum(["green", "amber", "red"]),
   confidence: z.number().min(0).max(1),
 });
 

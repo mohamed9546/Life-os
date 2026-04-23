@@ -23,7 +23,7 @@ export interface JobSearchQuery {
   postedAfter?: string; // ISO date
 }
 
-/** Standard exclusions for all pharma/life-sciences searches — blocks financial and retail noise. */
+/** Standard exclusions for all pharma/life-sciences searches — blocks financial, retail, and lab noise. */
 export const PHARMA_NEGATIVE_KEYWORDS: string[] = [
   "tax",
   "accountant",
@@ -36,6 +36,25 @@ export const PHARMA_NEGATIVE_KEYWORDS: string[] = [
   "community pharmacy",
   "locum",
   "dispensary manager",
+  "microbiologist",
+  "laboratory scientist",
+  "wet lab",
+  "field sales",
+  "sales representative",
+  "tax assistant",
+  "tax analyst",
+  "payroll",
+  "audit trainee",
+  "legal assistant",
+  "superintendent pharmacist",
+  "territory manager",
+  "business development representative",
+  "bench scientist",
+  "biomedical scientist",
+  "veterinary",
+  "dental sales",
+  "insurance",
+  "claims handler"
 ];
 
 /**

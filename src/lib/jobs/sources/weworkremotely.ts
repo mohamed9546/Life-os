@@ -5,7 +5,6 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
-import { getAppConfig } from "@/lib/config/app-config";
 import {
   JobSourceAdapter,
   JobSearchQuery,
@@ -18,8 +17,8 @@ export class WeWorkRemotelyAdapter implements JobSourceAdapter {
   readonly displayName = "We Work Remotely";
 
   async isConfigured(): Promise<boolean> {
-    const config = await getAppConfig();
-    return config.jobSources.weworkremotely?.enabled ?? true;
+    // WWR RSS feeds return 301 redirects — disabled until URL schema is confirmed working
+    return false;
   }
 
   async fetchJobs(query: JobSearchQuery): Promise<JobSourceResult> {

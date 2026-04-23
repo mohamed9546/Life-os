@@ -31,7 +31,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   baseUrl: process.env.OLLAMA_BASE_URL || "",
   apiKey: process.env.GEMINI_API_KEY || null,
   compatibilityMode: "gemini", // Avoids Ollama health check crash
-  model: "gemini-1.5-flash",
+  model: "gemini-2.5-flash",
   fallbackModel: null,
   timeoutMs: 45_000,
   temperature: 0.15,
@@ -44,7 +44,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "health-test": {
       enabled: true,
       label: "Health test",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 12_000,
       retryAttempts: 0,
@@ -54,7 +54,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "parse-job": {
       enabled: true,
       label: "Parse job posting",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 35_000,
       retryAttempts: 0,
@@ -64,7 +64,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "evaluate-job": {
       enabled: true,
       label: "Evaluate job fit",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 45_000,
       retryAttempts: 0,
@@ -74,7 +74,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "categorize-transaction": {
       enabled: true,
       label: "Categorize transaction",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -84,7 +84,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-candidate-profile": {
       enabled: true,
       label: "Extract candidate profile",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 35_000,
       retryAttempts: 0,
@@ -94,7 +94,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-money": {
       enabled: true,
       label: "Summarize money state",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -104,7 +104,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-week": {
       enabled: true,
       label: "Summarize week",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -114,7 +114,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-decision": {
       enabled: true,
       label: "Summarize decision",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -124,7 +124,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-decision-patterns": {
       enabled: true,
       label: "Summarize decision patterns",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -134,7 +134,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "suggest-routine-focus": {
       enabled: true,
       label: "Suggest routine focus",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -144,7 +144,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "generate-followup": {
       enabled: true,
       label: "Generate follow-up plan",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -154,7 +154,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "generate-outreach": {
       enabled: true,
       label: "Generate outreach strategy",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -164,7 +164,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "chat": {
       enabled: true,
       label: "AI assistant chat",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -174,7 +174,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "tailor-cv": {
       enabled: true,
       label: "Auto-Tailor CV",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 45_000,
       retryAttempts: 0,
@@ -184,7 +184,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "linkedin-intro": {
       enabled: true,
       label: "LinkedIn intro generator",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -198,15 +198,32 @@ function normalizeBaseUrl(baseUrl?: string | null): string {
   return (baseUrl || DEFAULT_AI_CONFIG.baseUrl).trim().replace(/\/+$/, "");
 }
 
+const DEPRECATED_MODEL_MAP: Record<string, string> = {
+  "gemini-1.5-flash": "gemini-2.0-flash",
+  "gemini-1.5-flash-latest": "gemini-2.0-flash",
+  "gemini-1.5-pro": "gemini-2.0-flash",
+  "gemini-1.5-pro-latest": "gemini-2.0-flash",
+};
+
+function upgradeModel(model: string | null | undefined): string {
+  if (!model) return DEFAULT_AI_CONFIG.model;
+  return DEPRECATED_MODEL_MAP[model.trim()] ?? model.trim();
+}
+
 function mergeTaskSettings(
   overrides?: Partial<AIConfig["taskSettings"]>
 ): AIConfig["taskSettings"] {
   const merged = { ...DEFAULT_AI_CONFIG.taskSettings };
 
   for (const taskType of AI_TASK_ORDER) {
+    const override = overrides?.[taskType] || {};
     merged[taskType] = {
       ...DEFAULT_AI_CONFIG.taskSettings[taskType],
-      ...(overrides?.[taskType] || {}),
+      ...override,
+      model: upgradeModel(override.model ?? DEFAULT_AI_CONFIG.taskSettings[taskType].model),
+      fallbackModel: override.fallbackModel !== undefined
+        ? (override.fallbackModel ? upgradeModel(override.fallbackModel) : null)
+        : DEFAULT_AI_CONFIG.taskSettings[taskType].fallbackModel,
     };
   }
 
@@ -235,9 +252,10 @@ function normalizeConfig(config?: Partial<AIConfig> | null): AIConfig {
     apiKey: config?.apiKey ?? DEFAULT_AI_CONFIG.apiKey,
     compatibilityMode:
       config?.compatibilityMode || DEFAULT_AI_CONFIG.compatibilityMode,
-    model: config?.model?.trim() || DEFAULT_AI_CONFIG.model,
-    fallbackModel:
-      config?.fallbackModel?.trim() || DEFAULT_AI_CONFIG.fallbackModel,
+    model: upgradeModel(config?.model) || DEFAULT_AI_CONFIG.model,
+    fallbackModel: config?.fallbackModel
+      ? upgradeModel(config.fallbackModel)
+      : DEFAULT_AI_CONFIG.fallbackModel,
     taskSettings: mergeTaskSettings(config?.taskSettings),
   };
 

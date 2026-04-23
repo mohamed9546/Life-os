@@ -136,6 +136,12 @@ export function PasteJobPanel() {
               label="Salary"
               value={parsed.salaryText || "Not specified"}
             />
+            {evaluation && (
+              <MetaField
+                label="Visa Risk"
+                value={evaluation.visaRisk}
+              />
+            )}
             <MetaField
               label="Parse Confidence"
               value={`${Math.round(parsed.confidence * 100)}%`}
