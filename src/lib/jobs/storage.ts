@@ -41,6 +41,10 @@ function getSupabase() {
   return createServiceClient();
 }
 
+function warnDbFallback(operation: string, error: unknown) {
+  console.warn(`[jobs/storage] Supabase ${operation} failed; using local JSON fallback.`, error);
+}
+
 function sortByFitScore(jobs: EnrichedJob[]): EnrichedJob[] {
   return [...jobs].sort(
     (a, b) => (b.fit?.data?.fitScore || 0) - (a.fit?.data?.fitScore || 0)
@@ -206,31 +210,43 @@ async function readDbJobs(userId: string, statuses?: UserJobStatus[]) {
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  let query = supabase
-    .from("jobs")
-    .select("*")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false });
+  try {
+    let query = supabase
+      .from("jobs")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
 
-  if (statuses && statuses.length > 0) {
-    query = query.in("status", statuses);
+    if (statuses && statuses.length > 0) {
+      query = query.in("status", statuses);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(mapDbJob);
+  } catch (err) {
+    warnDbFallback("job read", err);
+    return null;
   }
-
-  const { data } = await query;
-  return (data || []).map(mapDbJob);
 }
 
 async function readDbRawJobs(userId: string) {
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const { data } = await supabase
-    .from("raw_jobs")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from("raw_jobs")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
 
-  return (data || []).map(mapDbRawJob);
+    if (error) throw error;
+    return (data || []).map(mapDbRawJob);
+  } catch (err) {
+    warnDbFallback("raw job read", err);
+    return null;
+  }
 }
 
 async function upsertDbJobs(userId: string, jobs: EnrichedJob[]) {
@@ -239,12 +255,18 @@ async function upsertDbJobs(userId: string, jobs: EnrichedJob[]) {
 
   if (jobs.length === 0) return [];
 
-  const { data } = await supabase
-    .from("jobs")
-    .upsert(jobs.map((job) => mapJobForDb(userId, job)), { onConflict: "id" })
-    .select("*");
+  try {
+    const { data, error } = await supabase
+      .from("jobs")
+      .upsert(jobs.map((job) => mapJobForDb(userId, job)), { onConflict: "id" })
+      .select("*");
 
-  return (data || []).map(mapDbJob);
+    if (error) throw error;
+    return (data || []).map(mapDbJob);
+  } catch (err) {
+    warnDbFallback("job upsert", err);
+    return null;
+  }
 }
 
 async function replaceDbJobsByStatus(
@@ -255,8 +277,18 @@ async function replaceDbJobsByStatus(
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  await supabase.from("jobs").delete().eq("user_id", userId).in("status", statuses);
-  return upsertDbJobs(userId, jobs);
+  try {
+    const { error } = await supabase
+      .from("jobs")
+      .delete()
+      .eq("user_id", userId)
+      .in("status", statuses);
+    if (error) throw error;
+    return upsertDbJobs(userId, jobs);
+  } catch (err) {
+    warnDbFallback("job replace", err);
+    return null;
+  }
 }
 
 async function upsertDbRawJobs(userId: string, jobs: RawJobItem[]) {
@@ -265,20 +297,26 @@ async function upsertDbRawJobs(userId: string, jobs: RawJobItem[]) {
 
   if (jobs.length === 0) return [];
 
-  const now = new Date().toISOString();
-  await supabase.from("raw_jobs").upsert(
-    jobs.map((job, index) => ({
-      id: `${userId}-${job.source}-${job.sourceJobId || index}-${job.fetchedAt}`,
-      user_id: userId,
-      source: job.source,
-      payload: job,
-      dedupe_key: (job as RawJobItem & { dedupeKey?: string }).dedupeKey || null,
-      fetched_at: job.fetchedAt,
-      created_at: now,
-      updated_at: now,
-    })),
-    { onConflict: "id" }
-  );
+  try {
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("raw_jobs").upsert(
+      jobs.map((job, index) => ({
+        id: `${userId}-${job.source}-${job.sourceJobId || index}-${job.fetchedAt}`,
+        user_id: userId,
+        source: job.source,
+        payload: job,
+        dedupe_key: (job as RawJobItem & { dedupeKey?: string }).dedupeKey || null,
+        fetched_at: job.fetchedAt,
+        created_at: now,
+        updated_at: now,
+      })),
+      { onConflict: "id" }
+    );
+    if (error) throw error;
+  } catch (err) {
+    warnDbFallback("raw job upsert", err);
+    return null;
+  }
 
   return jobs;
 }
@@ -315,13 +353,17 @@ export async function overwriteRawJobs(
   userId?: string
 ): Promise<void> {
   const actorId = await resolveActorId(userId);
-  const dbJobs = await readDbRawJobs(actorId);
-  if (dbJobs) {
-    const supabase = getSupabase();
-    if (supabase) {
-      await supabase.from("raw_jobs").delete().eq("user_id", actorId);
-      await upsertDbRawJobs(actorId, jobs);
-      return;
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("raw_jobs").delete().eq("user_id", actorId);
+      if (error) throw error;
+      const dbResult = await upsertDbRawJobs(actorId, jobs);
+      if (dbResult) {
+        return;
+      }
+    } catch (err) {
+      warnDbFallback("raw job overwrite", err);
     }
   }
 
@@ -500,11 +542,18 @@ export async function updateStoredJob(
 
   const supabase = getSupabase();
   if (supabase) {
-    const { data } = await supabase
-      .from("jobs")
-      .upsert([mapJobForDb(actorId, updated)], { onConflict: "id" })
-      .select("id");
-    return Boolean(data && data.length > 0);
+    try {
+      const { data, error } = await supabase
+        .from("jobs")
+        .upsert([mapJobForDb(actorId, updated)], { onConflict: "id" })
+        .select("id");
+      if (error) throw error;
+      if (data && data.length > 0) {
+        return true;
+      }
+    } catch (err) {
+      warnDbFallback("job update", err);
+    }
   }
 
   const collections = [
@@ -582,13 +631,20 @@ async function updateJobStatus(
   const supabase = getSupabase();
 
   if (supabase) {
-    const { data } = await supabase
-      .from("jobs")
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq("user_id", actorId)
-      .eq("id", id)
-      .select("id");
-    return Boolean(data && data.length > 0);
+    try {
+      const { data, error } = await supabase
+        .from("jobs")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("user_id", actorId)
+        .eq("id", id)
+        .select("id");
+      if (error) throw error;
+      if (data && data.length > 0) {
+        return true;
+      }
+    } catch (err) {
+      warnDbFallback("job status update", err);
+    }
   }
 
   const collections = [
@@ -600,11 +656,14 @@ async function updateJobStatus(
 
   for (const collection of collections) {
     const items = await readCollection<StoredEnrichedJob>(collection);
-    const index = items.findIndex((item) => item.id === id && item.userId === actorId);
+    const index = items.findIndex(
+      (item) => item.id === id && (!item.userId || item.userId === actorId)
+    );
     if (index >= 0) {
       items[index] = {
         ...items[index],
         status,
+        userId: actorId,
         updatedAt: new Date().toISOString(),
       };
       await writeCollection(collection, items);
@@ -637,13 +696,20 @@ export async function changeStage(id: string, status: UserJobStatus, userId?: st
   const now = new Date().toISOString();
 
   if (supabase) {
-    const { data } = await supabase
-      .from("jobs")
-      .update({ status, stage_changed_at: now, updated_at: now })
-      .eq("user_id", actorId)
-      .eq("id", id)
-      .select("id");
-    return Boolean(data && data.length > 0);
+    try {
+      const { data, error } = await supabase
+        .from("jobs")
+        .update({ status, stage_changed_at: now, updated_at: now })
+        .eq("user_id", actorId)
+        .eq("id", id)
+        .select("id");
+      if (error) throw error;
+      if (data && data.length > 0) {
+        return true;
+      }
+    } catch (err) {
+      warnDbFallback("job stage update", err);
+    }
   }
 
   return updateStoredJob(
@@ -664,13 +730,20 @@ export async function setFollowUp(
   const supabase = getSupabase();
 
   if (supabase) {
-    const { data } = await supabase
-      .from("jobs")
-      .update({ follow_up_date: followUpDate, follow_up_note: followUpNote, updated_at: now })
-      .eq("user_id", actorId)
-      .eq("id", id)
-      .select("id");
-    return Boolean(data && data.length > 0);
+    try {
+      const { data, error } = await supabase
+        .from("jobs")
+        .update({ follow_up_date: followUpDate, follow_up_note: followUpNote, updated_at: now })
+        .eq("user_id", actorId)
+        .eq("id", id)
+        .select("id");
+      if (error) throw error;
+      if (data && data.length > 0) {
+        return true;
+      }
+    } catch (err) {
+      warnDbFallback("job follow-up update", err);
+    }
   }
 
   return updateStoredJob(
@@ -690,13 +763,20 @@ export async function updateJobNotes(
   const supabase = getSupabase();
 
   if (supabase) {
-    const { data } = await supabase
-      .from("jobs")
-      .update({ user_notes: notes, updated_at: now })
-      .eq("user_id", actorId)
-      .eq("id", id)
-      .select("id");
-    return Boolean(data && data.length > 0);
+    try {
+      const { data, error } = await supabase
+        .from("jobs")
+        .update({ user_notes: notes, updated_at: now })
+        .eq("user_id", actorId)
+        .eq("id", id)
+        .select("id");
+      if (error) throw error;
+      if (data && data.length > 0) {
+        return true;
+      }
+    } catch (err) {
+      warnDbFallback("job notes update", err);
+    }
   }
 
   return updateStoredJob(

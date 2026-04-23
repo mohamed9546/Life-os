@@ -123,6 +123,17 @@ export function CareerDashboard() {
       </div>
 
       {/* Pipeline result banner */}
+      {pipeline.running && (
+        <AlertBanner
+          tone="info"
+          title="Pipeline running in the background"
+          description={
+            pipeline.activeRunId
+              ? `Run ${pipeline.activeRunId} is being polled; jobs will refresh when it completes.`
+              : "Starting a persisted run; jobs will refresh when it completes."
+          }
+        />
+      )}
       {pipeline.lastResult?.summary && (
         <PipelineResultBanner result={pipeline.lastResult} />
       )}

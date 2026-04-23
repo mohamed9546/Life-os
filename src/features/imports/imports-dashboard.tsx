@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ImportRecord } from "@/types";
 import { StatusBadge } from "@/components/status-badge";
+import { assertJsonOk } from "@/lib/api/safe-json";
 
 interface ImportsResponse {
   records: ImportRecord[];
@@ -35,9 +36,12 @@ export function ImportsDashboard() {
     setError(null);
     try {
       const response = await fetch("/api/imports");
-      const payload = (await response.json()) as ImportsResponse | { error?: string };
-      if (!response.ok || !("records" in payload)) {
-        throw new Error(("error" in payload && payload.error) || "Failed to load imports");
+      const payload = await assertJsonOk<ImportsResponse & { error?: string }>(
+        response,
+        "Failed to load imports"
+      );
+      if (!("records" in payload)) {
+        throw new Error("Failed to load imports");
       }
       setData(payload);
     } catch (err) {
@@ -65,10 +69,7 @@ export function ImportsDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode, input }),
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Job import failed");
-      }
+      await assertJsonOk<{ error?: string }>(response, "Job import failed");
 
       if (mode === "json") {
         setJobJson("");
@@ -101,10 +102,7 @@ export function ImportsDashboard() {
           runAI: true,
         }),
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Transaction import failed");
-      }
+      await assertJsonOk<{ error?: string }>(response, "Transaction import failed");
 
       setTransactionInput("");
       await refresh();
@@ -128,11 +126,17 @@ export function ImportsDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: previewInput }),
       });
-      const payload = (await response.json()) as
-        | { previews?: Array<{ type: string; confidence: number; summary: string; destination: string }>; error?: string }
-        | { error?: string };
-      if (!response.ok || !("previews" in payload)) {
-        throw new Error(("error" in payload && payload.error) || "Preview failed");
+      const payload = await assertJsonOk<{
+        previews?: Array<{
+          type: string;
+          confidence: number;
+          summary: string;
+          destination: string;
+        }>;
+        error?: string;
+      }>(response, "Preview failed");
+      if (!("previews" in payload)) {
+        throw new Error(payload.error || "Preview failed");
       }
       setPreviewResults(payload.previews || []);
     } catch (err) {
@@ -156,10 +160,7 @@ export function ImportsDashboard() {
         method: "POST",
         body: formData,
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "CV import failed");
-      }
+      await assertJsonOk<{ error?: string }>(response, "CV import failed");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "CV import failed");

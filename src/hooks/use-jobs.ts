@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { EnrichedJob } from "@/types";
+import { assertJsonOk, readJsonResponse } from "@/lib/api/safe-json";
 
 interface JobStats {
   raw: number;
@@ -30,6 +31,16 @@ interface UseJobsState {
   error: string | null;
 }
 
+interface DashboardResponse {
+  inbox?: EnrichedJob[];
+  ranked?: EnrichedJob[];
+  rejected?: EnrichedJob[];
+  tracked?: EnrichedJob[];
+  stats?: JobStats;
+  sources?: SourceInfo[];
+  error?: string;
+}
+
 export function useJobs() {
   const [state, setState] = useState<UseJobsState>({
     inbox: [],
@@ -46,9 +57,9 @@ export function useJobs() {
     try {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
-      const dashboard = await fetch("/api/jobs/dashboard")
-        .then((response) => response.json())
-        .catch(() => null);
+      const dashboard = await fetch("/api/jobs/dashboard").then((response) =>
+        assertJsonOk<DashboardResponse>(response, "Failed to load jobs")
+      );
 
       setState({
         inbox: dashboard?.inbox || [],
@@ -82,9 +93,7 @@ export function useJobs() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const payload = await readJsonResponse<{ error?: string }>(response).catch(() => null);
         throw new Error(payload?.error || `Job action failed: ${action}`);
       }
 
@@ -102,9 +111,7 @@ export function useJobs() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const payload = await readJsonResponse<{ error?: string }>(response).catch(() => null);
         throw new Error(payload?.error || `Job action failed: ${action}`);
       }
 

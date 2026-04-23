@@ -6,6 +6,7 @@ import {
   CandidateProfileSeed,
   normalizeCandidateProfile,
 } from "@/lib/profile/shared";
+import { assertJsonOk } from "@/lib/api/safe-json";
 
 interface CandidateProfileResponse {
   profile: CandidateProfileSeed | null;
@@ -25,9 +26,12 @@ export function CandidateProfilePanel() {
     setError(null);
     try {
       const response = await fetch("/api/profile/candidate");
-      const payload = (await response.json()) as CandidateProfileResponse | { error?: string };
-      if (!response.ok || !("profile" in payload)) {
-        throw new Error(("error" in payload && payload.error) || "Failed to load candidate profile");
+      const payload = await assertJsonOk<CandidateProfileResponse & { error?: string }>(
+        response,
+        "Failed to load candidate profile"
+      );
+      if (!("profile" in payload)) {
+        throw new Error("Failed to load candidate profile");
       }
       setData(payload);
     } catch (err) {
@@ -75,10 +79,7 @@ export function CandidateProfilePanel() {
         method: "POST",
         body: formData,
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to import CV");
-      }
+      await assertJsonOk<{ error?: string }>(response, "Failed to import CV");
       setMessage("CV imported into profile draft");
       await refresh();
     } catch (err) {
@@ -103,10 +104,7 @@ export function CandidateProfilePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profile: data.profile }),
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to save candidate profile");
-      }
+      await assertJsonOk<{ error?: string }>(response, "Failed to save candidate profile");
       setMessage("Candidate profile saved");
       await refresh();
     } catch (err) {
@@ -127,10 +125,7 @@ export function CandidateProfilePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approveDraft: true }),
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to approve profile draft");
-      }
+      await assertJsonOk<{ error?: string }>(response, "Failed to approve profile draft");
       setMessage("Profile draft approved");
       await refresh();
     } catch (err) {

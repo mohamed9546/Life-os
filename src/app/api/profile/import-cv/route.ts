@@ -8,11 +8,16 @@ import {
 import { saveImportRecord } from "@/lib/imports/storage";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  const user = await requireAppUser();
+  let userId: string | null = null;
 
   try {
+    const user = await requireAppUser();
+    userId = user.id;
+
     const formData = await request.formData();
     const uploads = formData.getAll("files").filter((item): item is File => item instanceof File);
 
@@ -56,7 +61,7 @@ export async function POST(request: Request) {
         },
         summary: `Extracted ${sourceFiles.length} CV file(s) into a candidate profile draft for review.`,
       },
-      user.id
+      userId
     );
 
     return NextResponse.json({
@@ -65,24 +70,40 @@ export async function POST(request: Request) {
       record,
     });
   } catch (err) {
-    await saveImportRecord(
-      {
-        type: "cv-pdf",
-        label: "CV PDF import failed",
-        status: "failed",
-        counts: {
-          received: 0,
-          imported: 0,
-          failed: 1,
-        },
-        summary: err instanceof Error ? err.message : "CV import failed",
-      },
-      user.id
-    );
+    if (userId) {
+      try {
+        await saveImportRecord(
+          {
+            type: "cv-pdf",
+            label: "CV PDF import failed",
+            status: "failed",
+            counts: {
+              received: 0,
+              imported: 0,
+              failed: 1,
+            },
+            summary: err instanceof Error ? err.message : "CV import failed",
+          },
+          userId
+        );
+      } catch (recordErr) {
+        console.warn("[profile/import-cv] Failed to save failed import record.", recordErr);
+      }
+    }
+
+    const status =
+      err instanceof Error &&
+      (err.message.toLowerCase().includes("auth") ||
+        err.message.toLowerCase().includes("sign in"))
+        ? 401
+        : 500;
 
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to import CV" },
-      { status: 500 }
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "Failed to import CV",
+      },
+      { status }
     );
   }
 }

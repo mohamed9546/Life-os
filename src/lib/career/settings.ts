@@ -15,6 +15,23 @@ import {
 } from "./defaults";
 import { JobSearchQuery } from "@/lib/jobs/sources/types";
 
+function warnSettingsFallback(operation: string, error: unknown) {
+  console.warn(
+    `[career/settings] Supabase ${operation} failed; using local JSON fallback.`,
+    error
+  );
+}
+
+async function loadFallbackSettings(userId: string, email: string) {
+  const [profile, savedSearches, sourcePreferences] = await Promise.all([
+    loadFallbackProfile(userId, email),
+    loadFallbackSavedSearches(userId),
+    loadFallbackSourcePreferences(userId),
+  ]);
+
+  return { profile, savedSearches, sourcePreferences };
+}
+
 async function loadFallbackProfile(userId: string, email: string) {
   const profiles = await readCollection<CareerProfile>(Collections.CAREER_PROFILES);
   const existing = profiles.find((profile) => profile.id === userId);
@@ -88,17 +105,11 @@ export async function getUserSettings(
   const supabase = createServiceClient();
 
   if (!supabase) {
-    const [profile, savedSearches, sourcePreferences] = await Promise.all([
-      loadFallbackProfile(userId, email),
-      loadFallbackSavedSearches(userId),
-      loadFallbackSourcePreferences(userId),
-    ]);
-
-    return { profile, savedSearches, sourcePreferences };
+    return loadFallbackSettings(userId, email);
   }
 
-  const [{ data: profileData }, { data: searchData }, { data: sourceData }] =
-    await Promise.all([
+  try {
+    const [profileResult, searchResult, sourceResult] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
       supabase
         .from("saved_searches")
@@ -112,32 +123,40 @@ export async function getUserSettings(
         .order("source_id", { ascending: true }),
     ]);
 
-  const profile =
-    mapProfileFromDb(profileData) ||
-    (await writeDbProfile(createDefaultCareerProfile(userId, email)));
+    if (profileResult.error) throw profileResult.error;
+    if (searchResult.error) throw searchResult.error;
+    if (sourceResult.error) throw sourceResult.error;
 
-  let savedSearches = (searchData || []).map(mapSearchFromDb);
-  let sourcePreferences = (sourceData || []).map(mapSourceFromDb);
+    const profile =
+      mapProfileFromDb(profileResult.data) ||
+      (await writeDbProfile(createDefaultCareerProfile(userId, email)));
 
-  if (savedSearches.length === 0) {
-    savedSearches = await replaceSavedSearches(
-      userId,
-      createDefaultSavedSearches(userId)
-    );
+    let savedSearches = (searchResult.data || []).map(mapSearchFromDb);
+    let sourcePreferences = (sourceResult.data || []).map(mapSourceFromDb);
+
+    if (savedSearches.length === 0) {
+      savedSearches = await replaceSavedSearches(
+        userId,
+        createDefaultSavedSearches(userId)
+      );
+    }
+
+    if (sourcePreferences.length === 0) {
+      sourcePreferences = await replaceSourcePreferences(
+        userId,
+        createDefaultSourcePreferences(userId)
+      );
+    }
+
+    return {
+      profile,
+      savedSearches,
+      sourcePreferences,
+    };
+  } catch (err) {
+    warnSettingsFallback("settings read", err);
+    return loadFallbackSettings(userId, email);
   }
-
-  if (sourcePreferences.length === 0) {
-    sourcePreferences = await replaceSourcePreferences(
-      userId,
-      createDefaultSourcePreferences(userId)
-    );
-  }
-
-  return {
-    profile,
-    savedSearches,
-    sourcePreferences,
-  };
 }
 
 export async function upsertUserProfile(
@@ -171,31 +190,42 @@ export async function replaceSavedSearches(userId: string, searches: SavedSearch
     return writeFallbackSavedSearches(userId, searches);
   }
 
-  await supabase.from("saved_searches").delete().eq("user_id", userId);
+  try {
+    const deleteResult = await supabase
+      .from("saved_searches")
+      .delete()
+      .eq("user_id", userId);
 
-  if (searches.length === 0) {
-    return [];
+    if (deleteResult.error) throw deleteResult.error;
+
+    if (searches.length === 0) {
+      return [];
+    }
+
+    const payload = searches.map((search) => ({
+      id: uuid(),
+      user_id: userId,
+      label: search.label,
+      keywords: search.keywords,
+      location: search.location,
+      remote_only: search.remoteOnly,
+      radius: search.radius,
+      enabled: search.enabled,
+      created_at: search.createdAt,
+      updated_at: search.updatedAt,
+    }));
+
+    const { data, error } = await supabase
+      .from("saved_searches")
+      .insert(payload)
+      .select("*");
+
+    if (error) throw error;
+    return (data || []).map(mapSearchFromDb);
+  } catch (err) {
+    warnSettingsFallback("saved search write", err);
+    return writeFallbackSavedSearches(userId, searches);
   }
-
-  const payload = searches.map((search) => ({
-    id: uuid(),
-    user_id: userId,
-    label: search.label,
-    keywords: search.keywords,
-    location: search.location,
-    remote_only: search.remoteOnly,
-    radius: search.radius,
-    enabled: search.enabled,
-    created_at: search.createdAt,
-    updated_at: search.updatedAt,
-  }));
-
-  const { data } = await supabase
-    .from("saved_searches")
-    .insert(payload)
-    .select("*");
-
-  return (data || []).map(mapSearchFromDb);
 }
 
 export async function replaceSourcePreferences(
@@ -208,27 +238,38 @@ export async function replaceSourcePreferences(
     return writeFallbackSourcePreferences(userId, preferences);
   }
 
-  await supabase.from("source_configs").delete().eq("user_id", userId);
+  try {
+    const deleteResult = await supabase
+      .from("source_configs")
+      .delete()
+      .eq("user_id", userId);
 
-  if (preferences.length === 0) {
-    return [];
+    if (deleteResult.error) throw deleteResult.error;
+
+    if (preferences.length === 0) {
+      return [];
+    }
+
+    const payload = preferences.map((source) => ({
+      id: uuid(),
+      user_id: userId,
+      source_id: source.sourceId,
+      enabled: source.enabled,
+      created_at: source.createdAt,
+      updated_at: source.updatedAt,
+    }));
+
+    const { data, error } = await supabase
+      .from("source_configs")
+      .insert(payload)
+      .select("*");
+
+    if (error) throw error;
+    return (data || []).map(mapSourceFromDb);
+  } catch (err) {
+    warnSettingsFallback("source preference write", err);
+    return writeFallbackSourcePreferences(userId, preferences);
   }
-
-  const payload = preferences.map((source) => ({
-    id: uuid(),
-    user_id: userId,
-    source_id: source.sourceId,
-    enabled: source.enabled,
-    created_at: source.createdAt,
-    updated_at: source.updatedAt,
-  }));
-
-  const { data } = await supabase
-    .from("source_configs")
-    .insert(payload)
-    .select("*");
-
-  return (data || []).map(mapSourceFromDb);
 }
 
 export async function getEnabledUserSearchQueries(
@@ -274,8 +315,18 @@ async function loadDbProfile(userId: string, email: string): Promise<CareerProfi
     return loadFallbackProfile(userId, email);
   }
 
-  const { data } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-  return mapProfileFromDb(data) || createDefaultCareerProfile(userId, email);
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error) throw error;
+    return mapProfileFromDb(data) || createDefaultCareerProfile(userId, email);
+  } catch (err) {
+    warnSettingsFallback("profile read", err);
+    return loadFallbackProfile(userId, email);
+  }
 }
 
 async function writeDbProfile(profile: CareerProfile): Promise<CareerProfile> {
@@ -299,13 +350,19 @@ async function writeDbProfile(profile: CareerProfile): Promise<CareerProfile> {
     updated_at: profile.updatedAt,
   };
 
-  const { data } = await supabase
-    .from("profiles")
-    .upsert(payload, { onConflict: "id" })
-    .select("*")
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .upsert(payload, { onConflict: "id" })
+      .select("*")
+      .single();
 
-  return mapProfileFromDb(data) || profile;
+    if (error) throw error;
+    return mapProfileFromDb(data) || profile;
+  } catch (err) {
+    warnSettingsFallback("profile write", err);
+    return writeFallbackProfile(profile);
+  }
 }
 
 function mapSearchFromDb(data: any): SavedSearch {

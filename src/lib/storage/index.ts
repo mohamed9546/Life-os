@@ -253,6 +253,7 @@ export const Collections = {
   SOURCE_PREFERENCES: "source-preferences",
   JOB_EVENTS: "job-events",
   JOB_INTEL: "job-intel",
+  PIPELINE_RUNS: "pipeline-runs",
   WORKER_RUNS: "worker-runs",
   TRANSACTIONS: "transactions",
   MERCHANT_RULES: "merchant-rules",
