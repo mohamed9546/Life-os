@@ -1,0 +1,36 @@
+# Cloud Run Configuration Persistence Migration
+
+The current architecture saves your configuration (AI API keys, Job Source toggles, etc.) to a local JSON file (`/tmp/data/ai-config.json`). Because Google Cloud Run completely destroys its temporary file system every time it scales down or deploys new code, your settings are constantly being wiped out.
+
+To make everything you write or toggle in the UI stay permanently, we need to bypass the ephemeral file system and save this data directly into your Supabase database.
+
+## Proposed Changes
+
+### 1. New Supabase Storage Table
+We will create a universal key-value store table in your Supabase database to hold all app configuration and AI usage logs.
+
+### 2. Refactor `storage/index.ts`
+We will rewrite the core storage engine (`src/lib/storage/index.ts`) so that `readObject`, `writeObject`, `readCollection`, and `writeCollection` communicate directly with Supabase via `createServiceClient()` instead of using the local file system.
+
+### [MODIFY] `src/lib/storage/index.ts`
+- Integrate Supabase database client.
+- Map file paths to the new `storage_kv` table.
+- Implement silent fallback to the file system if Supabase is unreachable.
+
+## User Action Required
+Because your Supabase instance is hosted remotely on the cloud, I cannot run database migrations directly from my terminal. 
+
+> [!IMPORTANT]
+> To proceed, you will need to open the **Supabase Dashboard** -> **SQL Editor** and run a simple SQL script that I will provide. This script will create the `storage_kv` table.
+
+## Job Source API Keys Reference
+You asked for the variables needed for the job sources. Even with UI persistence, it is a best practice to set API keys as Cloud Run Environment Variables. Here are the keys you need to add to your Cloud Run service settings:
+- `ADZUNA_APP_ID`
+- `ADZUNA_APP_KEY`
+- `REED_API_KEY`
+- `THEMUSE_API_KEY`
+- `JOOBLE_API_KEY`
+- `FINDWORK_API_KEY`
+- `GEMINI_API_KEY`
+
+If you approve this plan, I will provide the exact SQL script for you to run in Supabase, and then I will rewrite the storage code.
