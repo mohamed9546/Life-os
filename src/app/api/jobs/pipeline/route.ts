@@ -12,6 +12,7 @@ import {
 } from "@/lib/career/settings";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 900;
 
 export async function POST(request: NextRequest) {
   try {

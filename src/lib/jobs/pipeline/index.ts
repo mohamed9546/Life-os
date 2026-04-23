@@ -25,10 +25,7 @@ import {
 import { dedupeJobsById } from "@/lib/jobs/selectors";
 import {
   type PipelineBudgetProfile,
-  resolvePipelineContactEnrichment,
   resolvePipelineEnrichmentBudget,
-  resolvePipelineQueryBudget,
-  resolvePipelineSourceBudget,
 } from "./config";
 
 export interface FetchResult {
@@ -117,7 +114,6 @@ export async function runFullPipeline(
     );
     enrichResult = await enrichJobs(dedupeResult.newJobs, {
       maxBatchSize: enrichBudget,
-      skipContactEnrichment: !resolvePipelineContactEnrichment(budgetProfile),
     });
     enrichMs = Date.now() - enrichStart;
 
@@ -212,21 +208,12 @@ export async function runFullPipeline(
 async function fetchFromSources(
   opts: PipelineOptions
 ): Promise<{ allJobs: RawJobItem[]; fetchResults: FetchResult[] }> {
-  const budgetProfile = opts.budgetProfile || "manual";
   let adapters = await getActiveAdapters();
 
   console.log(`[pipeline] Found ${adapters.length} active adapters globally.`);
 
   if (opts.sources && opts.sources.length > 0) {
     adapters = adapters.filter((adapter) => opts.sources!.includes(adapter.sourceId));
-  }
-
-  const sourceBudget = resolvePipelineSourceBudget(budgetProfile);
-  if (sourceBudget && adapters.length > sourceBudget) {
-    console.log(
-      `[pipeline] Capping source fan-out to ${sourceBudget}/${adapters.length}`
-    );
-    adapters = adapters.slice(0, sourceBudget);
   }
 
   if (adapters.length === 0) {
@@ -239,15 +226,8 @@ async function fetchFromSources(
     adapters.map((adapter) => adapter.sourceId).join(", ")
   );
 
-  let queries =
+  const queries =
     opts.queries && opts.queries.length > 0 ? opts.queries : DEFAULT_SEARCH_QUERIES;
-  const queryBudget = resolvePipelineQueryBudget(budgetProfile);
-  if (queryBudget && queries.length > queryBudget) {
-    console.log(
-      `[pipeline] Capping query fan-out to ${queryBudget}/${queries.length}`
-    );
-    queries = queries.slice(0, queryBudget);
-  }
 
   // Run adapters in parallel — each hits a different API/domain so there's no shared
   // rate limit. Queries stay sequential within each adapter to respect per-domain limits.

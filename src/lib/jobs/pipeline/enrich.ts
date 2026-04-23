@@ -59,7 +59,6 @@ export interface EnrichmentOptions {
   maxBatchSize?: number;
   parseOnly?: boolean;
   minDescriptionLength?: number;
-  skipContactEnrichment?: boolean;
 }
 
 interface EnrichmentDiagnostics {
@@ -76,7 +75,6 @@ const DEFAULT_OPTIONS: Required<EnrichmentOptions> = {
   maxBatchSize: 20,
   parseOnly: false,
   minDescriptionLength: 50,
-  skipContactEnrichment: false,
 };
 
 export async function enrichJobs(
@@ -312,7 +310,7 @@ async function enrichSingleJob(
   // If AI evaluation failed, use a zero-score stub — company intel will still
   // be fetched, but decision-maker search will respect the fit-score threshold
   // (effectively skipping it until the user manually refreshes contacts).
-  if (parsed?.data && status !== "rejected" && !opts.skipContactEnrichment) {
+  if (parsed?.data && status !== "rejected") {
     diagnostics.attemptedContacts = true;
     diagnostics.attemptedOutreach = true;
 
