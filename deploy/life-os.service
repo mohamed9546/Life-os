@@ -1,0 +1,23 @@
+[Unit]
+Description=Life OS (Next.js + Playwright)
+Documentation=https://github.com/mohamed9546/Life-os
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+ExecStartPre=-/usr/bin/docker stop life-os
+ExecStartPre=-/usr/bin/docker rm life-os
+ExecStart=/usr/bin/docker run \
+  --name life-os \
+  --rm \
+  --env-file /opt/life-os/env \
+  -v /opt/life-os/data:/app/data \
+  -p 127.0.0.1:8080:8080 \
+  life-os:latest
+ExecStop=/usr/bin/docker stop life-os
+
+[Install]
+WantedBy=multi-user.target

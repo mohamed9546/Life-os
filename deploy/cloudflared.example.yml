@@ -1,0 +1,24 @@
+# ============================================================
+# Cloudflare Tunnel config for Life OS
+# Install location on VM: /etc/cloudflared/config.yml
+#
+# One-time setup:
+#   1. Buy/own a domain on Cloudflare (any plan, free works).
+#   2. On the VM:
+#        curl -L -o cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+#        sudo dpkg -i cloudflared.deb
+#        cloudflared tunnel login                  # opens a URL, pick your domain
+#        cloudflared tunnel create life-os          # note the UUID it prints
+#        cloudflared tunnel route dns life-os life-os.YOUR_DOMAIN.com
+#   3. Copy this file to /etc/cloudflared/config.yml, fill in TUNNEL_UUID + domain.
+#   4. sudo cloudflared service install
+#      sudo systemctl enable --now cloudflared
+# ============================================================
+
+tunnel: life-os
+credentials-file: /root/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - hostname: life-os.REPLACE_WITH_YOUR_DOMAIN.com
+    service: http://localhost:8080
+  - service: http_status:404
