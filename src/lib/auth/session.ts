@@ -4,8 +4,8 @@ import { createClient as createServerSupabaseClient } from "@/lib/supabase/serve
 import { hasSupabaseEnv, isCareerBetaAdminEmail } from "@/lib/supabase/env";
 
 const PREVIEW_USER: AuthenticatedAppUser = {
-  id: "preview-user",
-  email: "preview@careerbeta.local",
+  id: process.env.LIFE_OS_DEFAULT_USER_ID || "preview-user",
+  email: process.env.LIFE_OS_DEFAULT_USER_EMAIL || "preview@careerbeta.local",
   isAdmin: true,
   mode: "preview",
 };

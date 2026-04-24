@@ -255,15 +255,24 @@ export function createDefaultSourcePreferences(userId: string): SourcePreference
 }
 
 export function searchesToQueries(searches: SavedSearch[]): JobSearchQuery[] {
+  // A saved search like `["clinical trial assistant", "trial coordinator", …]`
+  // is the user's intent to OR across those phrases. Most job APIs (Adzuna,
+  // Reed, Indeed, etc.) AND-join the `what` parameter, so a single combined
+  // query returns zero results. We fan out one query per phrase here so every
+  // adapter downstream works with single-phrase queries and can rely on
+  // dedupe to merge.
   return searches
     .filter((search) => search.enabled)
-    .map((search) => ({
-      keywords: search.keywords,
-      location: search.location,
-      radius: search.radius,
-      remoteOnly: search.remoteOnly,
-      maxResults: 25,
-    }));
+    .flatMap((search) => {
+      const phrases = search.keywords.length > 0 ? search.keywords : [""];
+      return phrases.map((phrase) => ({
+        keywords: [phrase],
+        location: search.location,
+        radius: search.radius,
+        remoteOnly: search.remoteOnly,
+        maxResults: 25,
+      }));
+    });
 }
 
 export function normalizeRemotePreference(value: string): CareerProfile["remotePreference"] {

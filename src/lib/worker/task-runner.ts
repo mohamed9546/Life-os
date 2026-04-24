@@ -30,7 +30,7 @@ import { getTransactions, updateTransaction } from "@/lib/money/storage";
 import { categorizeTransaction } from "@/lib/ai";
 import { generateWeeklyReview } from "@/lib/life-os/weekly-review";
 
-const WORKER_USER_ID = "preview-user";
+const WORKER_USER_ID = process.env.LIFE_OS_DEFAULT_USER_ID || "preview-user";
 
 // ---- State management ----
 

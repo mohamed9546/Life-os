@@ -29,11 +29,13 @@ async function resolveActorId(explicitUserId?: string): Promise<string> {
     return explicitUserId;
   }
 
+  const fallback = process.env.LIFE_OS_DEFAULT_USER_ID || "preview-user";
+
   try {
     const currentUser = await getCurrentAppUser();
-    return currentUser?.id || "preview-user";
+    return currentUser?.id || fallback;
   } catch {
-    return "preview-user";
+    return fallback;
   }
 }
 

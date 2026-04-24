@@ -32,7 +32,7 @@ Return JSON:
   "wordCount": number
 }`;
 
-    const result = await callAI({ taskType: "generate-followup", prompt });
+    const result = await callAI({ taskType: "cover-letter", prompt });
 
     if (result.error || !result.data) {
       return NextResponse.json({ error: result.error || "AI generation failed" }, { status: 500 });

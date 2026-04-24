@@ -53,7 +53,14 @@ export type AITaskType =
   | "generate-outreach"
   | "chat"
   | "tailor-cv"
-  | "linkedin-intro";
+  | "linkedin-intro"
+  | "cover-letter"
+  | "cv-optimize"
+  | "interview-prep"
+  | "salary-lookup"
+  | "skill-gap"
+  | "extract-job-from-scrape"
+  | "extract-job-list-from-scrape";
 
 export interface Timestamped {
   createdAt: Timestamp;

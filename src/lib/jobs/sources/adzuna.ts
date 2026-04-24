@@ -85,106 +85,134 @@ export class AdzunaAdapter implements JobSourceAdapter {
       };
     }
 
-    try {
-      const page = query.page || 1;
-      const perPage = Math.min(query.maxResults || 25, 50);
-      const country = config.country || "gb";
+    // Adzuna's `what` parameter AND-joins terms. A saved search like
+    // `["clinical trial assistant", "trial coordinator", ...]` is the user's
+    // intent to OR across those phrases, so we fan out one request per
+    // keyword entry and merge/dedupe by sourceJobId.
+    const keywordPhrases = query.keywords.length > 0 ? query.keywords : [""];
+    const perPhraseCap = Math.min(query.maxResults || 25, 50);
+    const totalCap = Math.min((query.maxResults || 25) * 2, 100);
+    const seenIds = new Set<string>();
+    const merged: RawJobItem[] = [];
+    let totalAvailable = 0;
+    let lastError: string | undefined;
 
-      // Build the search query string
-      const what = query.keywords.join(" ");
-      const where = query.location || "";
-
-      const params = new URLSearchParams({
-        app_id: config.appId,
-        app_key: config.appKey,
-        results_per_page: perPage.toString(),
-        what,
-        "content-type": "application/json",
-      });
-
-      if (where) params.set("where", where);
-      if (query.negativeKeywords?.length) {
-        params.set("what_exclude", query.negativeKeywords.join(" "));
-      }
-      if (query.radius) params.set("distance", query.radius.toString());
-      if (query.salaryMin) params.set("salary_min", query.salaryMin.toString());
-      if (query.salaryMax) params.set("salary_max", query.salaryMax.toString());
-
-      // Sort by date to get newest first
-      params.set("sort_by", "date");
-
-      const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?${params.toString()}`;
-
-      console.log(`[adzuna] Fetching: ${what} in ${where || "any location"}`);
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "unknown");
-        throw new Error(`Adzuna API returned ${response.status}: ${errorText}`);
-      }
-
-      const data = (await response.json()) as AdzunaAPIResponse;
-
-      const jobs: RawJobItem[] = data.results.map((result) => {
-        const salaryText = formatAdzunaSalary(
-          result.salary_min,
-          result.salary_max,
-          result.salary_is_predicted
+    for (const phrase of keywordPhrases) {
+      if (merged.length >= totalCap) break;
+      try {
+        const page = await this.fetchSinglePhrase(
+          config,
+          query,
+          phrase,
+          perPhraseCap,
+          now
         );
-
-        return normalizeRawJob({
-          source: this.sourceId,
-          sourceJobId: result.id,
-          title: result.title,
-          company: result.company?.display_name || "Unknown Company",
-          location: result.location?.display_name || "",
-          salaryText,
-          link: result.redirect_url,
-          postedAt: result.created,
-          employmentType: mapAdzunaContractType(result.contract_type, result.contract_time),
-          remoteType: detectRemoteType(
-            result.title,
-            result.location?.display_name || "",
-            result.description
-          ),
-          description: result.description,
-          raw: result,
-          fetchedAt: now,
-        });
-      });
-
-      console.log(`[adzuna] Fetched ${jobs.length} jobs (${data.count} total available)`);
-
-      return {
-        source: this.sourceId,
-        jobs,
-        totalAvailable: data.count,
-        fetchedAt: now,
-        query,
-        pageInfo: {
-          page,
-          perPage,
-          hasMore: page * perPage < data.count,
-        },
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Unknown Adzuna error";
-      console.error(`[adzuna] Fetch error:`, errorMsg);
-
-      return {
-        source: this.sourceId,
-        jobs: [],
-        totalAvailable: 0,
-        fetchedAt: now,
-        query,
-        error: errorMsg,
-      };
+        totalAvailable += page.totalAvailable;
+        for (const job of page.jobs) {
+          const id = job.sourceJobId || job.link;
+          if (id && seenIds.has(id)) continue;
+          if (id) seenIds.add(id);
+          merged.push(job);
+          if (merged.length >= totalCap) break;
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : "Unknown Adzuna error";
+        console.error(`[adzuna] Phrase "${phrase}" failed:`, lastError);
+      }
     }
+
+    console.log(
+      `[adzuna] Merged ${merged.length} jobs across ${keywordPhrases.length} phrase(s)`
+    );
+
+    return {
+      source: this.sourceId,
+      jobs: merged,
+      totalAvailable,
+      fetchedAt: now,
+      query,
+      error: merged.length === 0 ? lastError : undefined,
+    };
+  }
+
+  private async fetchSinglePhrase(
+    config: { appId: string; appKey: string; country: string },
+    query: JobSearchQuery,
+    phrase: string,
+    perPage: number,
+    now: string
+  ): Promise<{ jobs: RawJobItem[]; totalAvailable: number }> {
+    const page = query.page || 1;
+    const country = config.country || "gb";
+    const where = query.location || "";
+
+    const params = new URLSearchParams({
+      app_id: config.appId,
+      app_key: config.appKey,
+      results_per_page: perPage.toString(),
+      what: phrase,
+      "content-type": "application/json",
+    });
+
+    if (where) params.set("where", where);
+    if (query.negativeKeywords?.length) {
+      params.set("what_exclude", query.negativeKeywords.join(" "));
+    }
+    if (query.radius) params.set("distance", query.radius.toString());
+    if (query.salaryMin) params.set("salary_min", query.salaryMin.toString());
+    if (query.salaryMax) params.set("salary_max", query.salaryMax.toString());
+    params.set("sort_by", "date");
+
+    const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?${params.toString()}`;
+
+    console.log(`[adzuna] Fetching: "${phrase}" in ${where || "any location"}`);
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "unknown");
+      throw new Error(`Adzuna API returned ${response.status}: ${errorText}`);
+    }
+
+    const data = (await response.json()) as AdzunaAPIResponse;
+
+    const jobs: RawJobItem[] = (data.results || []).map((result) => {
+      const salaryText = formatAdzunaSalary(
+        result.salary_min,
+        result.salary_max,
+        result.salary_is_predicted
+      );
+
+      return normalizeRawJob({
+        source: this.sourceId,
+        sourceJobId: result.id,
+        title: result.title,
+        company: result.company?.display_name || "Unknown Company",
+        location: result.location?.display_name || "",
+        salaryText,
+        link: result.redirect_url,
+        postedAt: result.created,
+        employmentType: mapAdzunaContractType(result.contract_type, result.contract_time),
+        remoteType: detectRemoteType(
+          result.title,
+          result.location?.display_name || "",
+          result.description
+        ),
+        description: result.description,
+        raw: result,
+        fetchedAt: now,
+      });
+    });
+
+    console.log(
+      `[adzuna] "${phrase}" -> ${jobs.length} jobs (${data.count ?? 0} total available)`
+    );
+
+    return { jobs, totalAvailable: data.count ?? 0 };
   }
 }
 

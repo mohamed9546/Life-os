@@ -35,7 +35,7 @@ Return JSON:
 
 learningPriorities should have max 3 items, ranked by importance.`;
 
-    const result = await callAI({ taskType: "evaluate-job", prompt });
+    const result = await callAI({ taskType: "skill-gap", prompt });
 
     if (result.error || !result.data) {
       return NextResponse.json({ error: result.error || "AI failed" }, { status: 500 });

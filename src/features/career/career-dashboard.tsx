@@ -891,7 +891,7 @@ function PipelineSection({
 
   const all = useMemo(
     () =>
-      [...jobs.tracked, ...jobs.inbox, jobs.rejected].flat()
+      [...jobs.tracked, ...jobs.inbox, ...jobs.rejected]
         .filter((j, i, arr) => arr.findIndex((x) => x.id === j.id) === i)
         .sort((a, b) => (b.fit?.data?.fitScore ?? 0) - (a.fit?.data?.fitScore ?? 0)),
     [jobs.tracked, jobs.inbox, jobs.rejected]
