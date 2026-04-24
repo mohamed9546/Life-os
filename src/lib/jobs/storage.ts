@@ -76,8 +76,15 @@ function mapDbRawJob(row: any): RawJobItem {
   return row.payload;
 }
 
+// Some deployments haven't run the 20260424_add_jobs_followup_columns
+// migration yet, so follow_up_date / follow_up_note / stage_changed_at
+// may be missing. After the first PGRST204 on one of those columns we
+// stop sending them. The in-memory flag is per-process — after the
+// migration is applied, restart the app to re-enable the columns.
+let jobsHasKanbanColumns = true;
+
 function mapJobForDb(userId: string, job: EnrichedJob) {
-  return {
+  const base = {
     id: job.id,
     user_id: userId,
     status: job.status,
@@ -87,12 +94,32 @@ function mapJobForDb(userId: string, job: EnrichedJob) {
     fit: job.fit,
     user_notes: job.userNotes || null,
     source_query_id: job.sourceQueryId || null,
-    follow_up_date: job.followUpDate || null,
-    follow_up_note: job.followUpNote || null,
-    stage_changed_at: job.stageChangedAt || null,
     created_at: job.createdAt,
     updated_at: job.updatedAt,
   };
+
+  if (!jobsHasKanbanColumns) {
+    return base;
+  }
+
+  return {
+    ...base,
+    follow_up_date: job.followUpDate || null,
+    follow_up_note: job.followUpNote || null,
+    stage_changed_at: job.stageChangedAt || null,
+  };
+}
+
+function isMissingKanbanColumnError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: string; message?: string };
+  if (e.code !== "PGRST204") return false;
+  const msg = (e.message || "").toLowerCase();
+  return (
+    msg.includes("follow_up_date") ||
+    msg.includes("follow_up_note") ||
+    msg.includes("stage_changed_at")
+  );
 }
 
 function withUser<T extends { userId?: string }>(items: T[], userId: string): T[] {
@@ -257,18 +284,29 @@ async function upsertDbJobs(userId: string, jobs: EnrichedJob[]) {
 
   if (jobs.length === 0) return [];
 
-  try {
-    const { data, error } = await supabase
-      .from("jobs")
-      .upsert(jobs.map((job) => mapJobForDb(userId, job)), { onConflict: "id" })
-      .select("*");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { data, error } = await supabase
+        .from("jobs")
+        .upsert(jobs.map((job) => mapJobForDb(userId, job)), { onConflict: "id" })
+        .select("*");
 
-    if (error) throw error;
-    return (data || []).map(mapDbJob);
-  } catch (err) {
-    warnDbFallback("job upsert", err);
-    return null;
+      if (error) throw error;
+      return (data || []).map(mapDbJob);
+    } catch (err) {
+      if (jobsHasKanbanColumns && isMissingKanbanColumnError(err)) {
+        console.warn(
+          "[jobs/storage] Supabase jobs table is missing follow_up_date / follow_up_note / stage_changed_at — retrying without them. Apply supabase/migrations/20260424_add_jobs_followup_columns.sql to restore full kanban support."
+        );
+        jobsHasKanbanColumns = false;
+        continue;
+      }
+      warnDbFallback("job upsert", err);
+      return null;
+    }
   }
+
+  return null;
 }
 
 async function replaceDbJobsByStatus(

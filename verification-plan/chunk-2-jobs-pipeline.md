@@ -1,6 +1,8 @@
 # Chunk 2 — Jobs pipeline + sources
 
-**Status:** not started
+**Status:** walked-through 2026-04-24 (3 critical bugs fixed, 2 noted
+as latent traps; smoke tests partially run — dev server confirmed
+enriched jobs persist to Supabase after the fix)
 
 **Scope:** Everything that feeds raw jobs into the ranked inbox. The
 pipeline orchestrator, dedupe, enrich, rank, relevance gates, and every
@@ -84,9 +86,65 @@ and handle API errors (never throw to caller — return `{ jobs: [], error }`).
 
 ---
 
-## Issues found (append as you go)
+## Issues found (2026-04-24 walk-through)
 
-_None recorded yet._
+### Fixed this pass
+
+1. **Pipeline never drained the raw-jobs backlog.** `runFullPipeline`
+   only enriched `dedupeResult.newJobs`. After dedupe dropped a raw
+   job in a later fetch, that job sat in `raw_jobs` forever and never
+   made it into the inbox. With a ~15/run budget and hundreds of new
+   raws per fetch, most jobs never got AI-processed. Now the pipeline
+   unions this-run-new + the full backlog and feeds the union (up to
+   budget) into `enrichJobs`. Edit:
+   [src/lib/jobs/pipeline/index.ts](../src/lib/jobs/pipeline/index.ts)
+   (new `getUnenrichedRawJobs` helper).
+2. **Every job upsert to Supabase was silently failing.** `mapJobForDb`
+   wrote `follow_up_date`, `follow_up_note`, `stage_changed_at` — three
+   columns that don't exist in the `jobs` schema. Every insert errored
+   with PGRST204 and fell back to local JSON, so the deployed VM and
+   phone saw nothing. Added migration
+   [supabase/migrations/20260424000000_add_jobs_followup_columns.sql](../supabase/migrations/20260424000000_add_jobs_followup_columns.sql)
+   and a runtime workaround in
+   [src/lib/jobs/storage.ts](../src/lib/jobs/storage.ts): on first
+   PGRST204, flip an in-memory flag and retry without the kanban
+   columns. Apply the migration to re-enable them.
+3. **Manual-pipeline enrichment budget was 15.** Not enough to make a
+   visible dent per click when the backlog is 500+. Bumped to 40 in
+   [src/lib/jobs/pipeline/config.ts](../src/lib/jobs/pipeline/config.ts).
+
+### Open / noted
+
+4. **LinkedIn adapter emits jobs with no description.** Its guest
+   search returns title + company + location + date but not the
+   description body (would require per-job fetches). The 50-char
+   minDescriptionLength gate in `enrichJobs` doesn't trip because
+   the 6-line header text exceeds that, so these jobs DO get parsed
+   — but AI quality is poor. Trade-off: keep them (volume) or skip
+   them (quality). Currently kept.
+   File: [src/lib/jobs/sources/linkedin.ts:234](../src/lib/jobs/sources/linkedin.ts#L234).
+5. **`getActiveAdapters` doesn't consult user's `enabled` preference.**
+   Today `runFullPipeline` filters by user-enabled sources separately
+   so this is fine. But if anyone calls `getActiveAdapters()` directly
+   (e.g. background worker, cron), disabled sources will still fire.
+   Not a bug yet, but a latent trap.
+   File: [src/lib/jobs/sources/index.ts:72-81](../src/lib/jobs/sources/index.ts#L72-L81).
+
+### Architectural (deferred)
+
+6. **Apply `20260424_add_jobs_followup_columns.sql`.** The runtime
+   workaround persists everything except those three columns to
+   Supabase. Once the migration is applied + the app is restarted,
+   `follow_up_date` / `follow_up_note` / `stage_changed_at` will
+   persist again for the kanban + follow-up features. See
+   [README.md](README.md#getting-started-local) for how to apply
+   migrations.
+7. **VM deployment is missing `SUPABASE_SERVICE_ROLE_KEY`.** The
+   deployed app on the Debian VM was logged emitting
+   `[supabase/service] SUPABASE_SERVICE_ROLE_KEY is not configured;
+   using local JSON storage for server writes`. That means the phone
+   never talks to Supabase — action: SSH into the VM, add the service
+   role key to `/opt/life-os/env`, `sudo systemctl restart life-os`.
 
 ---
 

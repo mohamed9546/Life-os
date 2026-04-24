@@ -17,12 +17,15 @@ import { rankJobs, RankingResult } from "./rank";
 import {
   getEnrichedJobs,
   getInboxJobs,
+  getRawJobs,
+  getRejectedJobs,
   overwriteRankedJobs,
   saveRawJobs,
   saveToInbox,
   saveToRejected,
 } from "@/lib/jobs/storage";
 import { dedupeJobsById } from "@/lib/jobs/selectors";
+import { generateDedupeKey } from "@/lib/jobs/sources/normalize";
 import {
   type PipelineBudgetProfile,
   resolvePipelineEnrichmentBudget,
@@ -106,27 +109,37 @@ export async function runFullPipeline(
   };
   let enrichMs = 0;
 
-  if (!opts.skipEnrich && dedupeResult.newJobs.length > 0) {
-    const enrichStart = Date.now();
+  if (!opts.skipEnrich) {
     const enrichBudget = resolvePipelineEnrichmentBudget(
       budgetProfile,
       opts.maxEnrich
     );
-    enrichResult = await enrichJobs(dedupeResult.newJobs, {
-      maxBatchSize: enrichBudget,
-    });
-    enrichMs = Date.now() - enrichStart;
 
-    const inboxJobs = enrichResult.enriched.filter((job) => job.status === "inbox");
-    const rejectedJobs = enrichResult.enriched.filter(
-      (job) => job.status === "rejected"
-    );
+    // Union (this-run new jobs) ∪ (previously-fetched raw jobs that never
+    // made it through enrichment). Without this, once dedupe drops a raw
+    // job in a later fetch the original stays stranded in raw_jobs forever
+    // and the user never sees it in the UI.
+    const backlog = await getUnenrichedRawJobs(opts.userId);
+    const pool = mergeByDedupeKey([...dedupeResult.newJobs, ...backlog]);
 
-    if (inboxJobs.length > 0) {
-      await saveToInbox(inboxJobs, opts.userId);
-    }
-    if (rejectedJobs.length > 0) {
-      await saveToRejected(rejectedJobs, opts.userId);
+    if (pool.length > 0) {
+      const enrichStart = Date.now();
+      enrichResult = await enrichJobs(pool, { maxBatchSize: enrichBudget });
+      enrichMs = Date.now() - enrichStart;
+
+      const inboxJobs = enrichResult.enriched.filter(
+        (job) => job.status === "inbox"
+      );
+      const rejectedJobs = enrichResult.enriched.filter(
+        (job) => job.status === "rejected"
+      );
+
+      if (inboxJobs.length > 0) {
+        await saveToInbox(inboxJobs, opts.userId);
+      }
+      if (rejectedJobs.length > 0) {
+        await saveToRejected(rejectedJobs, opts.userId);
+      }
     }
   } else if (opts.skipEnrich && dedupeResult.newJobs.length > 0) {
     enrichResult = {
@@ -396,6 +409,47 @@ function emptyRankingStats(): RankingResult["stats"] {
     avgFitScore: 0,
     avgRedFlagScore: 0,
   };
+}
+
+/**
+ * Raw jobs that have never made it through enrichment — i.e. their
+ * dedupeKey is present in `raw_jobs` but absent from any `jobs` row
+ * (inbox / enriched / rejected). Ordered with newest raws first so the
+ * pipeline drains the most recent backlog first.
+ */
+async function getUnenrichedRawJobs(userId?: string): Promise<RawJobItem[]> {
+  const [raws, inbox, enriched, rejected] = await Promise.all([
+    getRawJobs(userId),
+    getInboxJobs(userId),
+    getEnrichedJobs(userId),
+    getRejectedJobs(userId),
+  ]);
+
+  const processedKeys = new Set<string>();
+  for (const job of [...inbox, ...enriched, ...rejected]) {
+    if (job.dedupeKey) processedKeys.add(job.dedupeKey);
+  }
+
+  return raws.filter((raw) => {
+    const key =
+      (raw as RawJobItem & { dedupeKey?: string }).dedupeKey ||
+      generateDedupeKey(raw);
+    return !processedKeys.has(key);
+  });
+}
+
+function mergeByDedupeKey(jobs: RawJobItem[]): RawJobItem[] {
+  const seen = new Set<string>();
+  const out: RawJobItem[] = [];
+  for (const job of jobs) {
+    const key =
+      (job as RawJobItem & { dedupeKey?: string }).dedupeKey ||
+      generateDedupeKey(job);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(job);
+  }
+  return out;
 }
 
 export { deduplicateJobs } from "./dedupe";

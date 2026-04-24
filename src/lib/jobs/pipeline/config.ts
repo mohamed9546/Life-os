@@ -1,5 +1,8 @@
 export const PIPELINE_ENRICHMENT_BUDGETS = {
-  manual: 15,
+  // Manual button clicks drain up to 40 per run. With ~3-5s per Gemini call
+  // this keeps the full pipeline under ~3 minutes while making visible progress
+  // against the backlog. Users can always click again.
+  manual: 40,
   worker: 25,
   textImport: 15,
   jsonImport: 20,
