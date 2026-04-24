@@ -67,6 +67,10 @@ export function SalaryTracker({ history = [] }: { history?: SalaryResult[] }) {
         body: JSON.stringify({ role, location }),
       });
       const data = await res.json();
+      if (!data.salary) {
+        toast.error(data.error || "Salary lookup failed");
+        return;
+      }
       setResult(data.salary);
       setSaved(s => [data.salary, ...s.slice(0, 9)]);
     } catch {

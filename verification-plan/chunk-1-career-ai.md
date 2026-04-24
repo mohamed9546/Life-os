@@ -1,7 +1,8 @@
 # Chunk 1 — Career + AI (Flagship)
 
-**Status:** in progress (initial walk-through done 2026-04-24;
-re-verification needed after each future change to these files)
+**Status:** walked-through 2026-04-24 (critical + real bugs fixed;
+minor defensive-coding issues noted below but not fixed; smoke tests
+not yet run end-to-end — re-verify after each future change)
 
 **Scope:** The career dashboard, every AI task, every AI API route,
 and every career-specific API route. This is the system's largest
@@ -91,10 +92,54 @@ schema validation, fallback. Walk each one looking for:
 
 ---
 
-## Issues found (append as you go)
+## Issues found (2026-04-24 walk-through)
 
-_None net-new since the initial walk-through on 2026-04-24. Prior fixes
-are listed in [README.md](README.md) under "Already-applied fixes"._
+### Fixed this pass
+
+1. **Dashboard KPIs for Applied / Interviews were always 0.** The
+   `/api/jobs/dashboard` route was returning
+   `tracked: enriched.filter(j => j.status === "tracked")`, but
+   `career-dashboard.tsx` computes
+   `applied = jobs.tracked.filter(j => j.status === "applied")` etc.
+   Fixed by broadening `tracked` to include every in-flight kanban
+   stage (`shortlisted|tracked|applied|interview|offer|archived`).
+   Edit: [src/app/api/jobs/dashboard/route.ts](../src/app/api/jobs/dashboard/route.ts).
+2. **`SalaryTracker` crashed when the salary API returned null.** On
+   server failure the component did `setSaved(s => [data.salary, ...])`
+   which pushed a `null` into history; subsequent iteration crashed on
+   `r.role`. Fixed by guarding on `!data.salary` and surfacing the
+   error. Edit: [src/features/career/salary-tracker.tsx](../src/features/career/salary-tracker.tsx).
+3. **Pipeline returned 0 jobs because multi-keyword searches became
+   AND-phrases.** Not strictly a chunk-1 file but surfaced during the
+   walk. Fixed in `searchesToQueries` (fans out one query per phrase)
+   and hardened in the Adzuna adapter.
+
+### Open (defensive-coding / polish — not blocking)
+
+4. **`CVOptimizer` swallows server errors.** Generic
+   `"CV optimization failed"` toast even when the server returned a
+   specific `error`. Low priority. Would read `data.error` and include it.
+   File: [src/features/career/cv-optimizer.tsx:41-43](../src/features/career/cv-optimizer.tsx#L41-L43).
+5. **`SkillGapAnalyzer` assumes `result.learningPriorities` exists.**
+   If the AI returns a partial object, accessing `.length` on
+   undefined would throw. Wrap with `result.learningPriorities?.length`.
+   File: [src/features/career/skill-gap.tsx:149](../src/features/career/skill-gap.tsx#L149).
+6. **`InterviewPrep` imports unused `RotateCcw`.** Cosmetic.
+   File: [src/features/career/interview-prep.tsx:4](../src/features/career/interview-prep.tsx#L4).
+7. **`RangeBar` divides by zero if `p75 === p25`.** CSS will
+   normalize the broken `left:` but the median tick renders at 0%.
+   File: [src/features/career/salary-tracker.tsx:32](../src/features/career/salary-tracker.tsx#L32).
+8. **`useApi` sets `data: null` before the fetch resolves.** Any
+   component rendering off `data` flickers to empty state during the
+   request. Low priority — most callers also watch `loading`.
+   File: [src/hooks/use-api.ts:21](../src/hooks/use-api.ts#L21).
+
+### Architectural (deferred — see README)
+
+9. **`logAICall` is a read-modify-write on a single `storage_kv` row.**
+   Concurrent enrichment calls can lose log entries. Plan: real
+   `ai_log` table with append-only inserts. Tracked in
+   [README.md](README.md#known-architectural-issues-deferred--decide-before-fixing).
 
 ---
 

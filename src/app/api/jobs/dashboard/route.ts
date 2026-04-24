@@ -42,11 +42,24 @@ export async function GET() {
         .map((adapter) => adapter.sourceId)
     );
 
+    // `tracked` carries everything in the pipeline (not just status==="tracked")
+    // so the career dashboard KPIs for Applied / Interviews / Offer / Shortlisted
+    // can count them directly. Rejected stays in `jobs.rejected`; inbox stays in
+    // `jobs.inbox`; everything else in flight lives here.
+    const trackedStages = new Set([
+      "shortlisted",
+      "tracked",
+      "applied",
+      "interview",
+      "offer",
+      "archived",
+    ]);
+
     return NextResponse.json({
       inbox,
       ranked,
       rejected,
-      tracked: enriched.filter((job) => job.status === "tracked"),
+      tracked: enriched.filter((job) => trackedStages.has(job.status)),
       stats,
       sources: allAdapters.map((adapter) => ({
         id: adapter.sourceId,
