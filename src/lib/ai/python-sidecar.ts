@@ -9,13 +9,13 @@
 // ============================================================
 
 export function isPythonAIEnabled(): boolean {
-  const flag = (process.env.USE_PYTHON_AI || "").toLowerCase();
-  const url = (process.env.PYTHON_AI_URL || "").trim();
+  const flag = (process.env["USE_PYTHON_AI"] || "").toLowerCase();
+  const url = (process.env["PYTHON_AI_URL"] || "").trim();
   return url.length > 0 && (flag === "1" || flag === "true" || flag === "yes");
 }
 
 export function pythonAIBaseUrl(): string | null {
-  const url = (process.env.PYTHON_AI_URL || "").trim();
+  const url = (process.env["PYTHON_AI_URL"] || "").trim();
   return url.length > 0 ? url.replace(/\/+$/, "") : null;
 }
 
@@ -28,7 +28,7 @@ type CachedIdentityToken = {
 let cachedIdentityToken: CachedIdentityToken | null = null;
 
 function shouldUseGoogleIdentityToken(baseUrl: string): boolean {
-  const mode = (process.env.PYTHON_AI_AUTH || "auto").toLowerCase();
+  const mode = (process.env["PYTHON_AI_AUTH"] || "auto").toLowerCase();
   if (mode === "none" || mode === "off" || mode === "false") {
     return false;
   }
@@ -38,7 +38,7 @@ function shouldUseGoogleIdentityToken(baseUrl: string): boolean {
 
   // Auto mode: local dev stays unauthenticated; Cloud Run-to-Cloud Run calls
   // to a run.app sidecar get an identity token.
-  return Boolean(process.env.K_SERVICE) && baseUrl.includes(".run.app");
+  return Boolean(process.env["K_SERVICE"]) && baseUrl.includes(".run.app");
 }
 
 function decodeJwtExpiry(token: string): number | null {
