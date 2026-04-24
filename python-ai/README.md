@@ -1,6 +1,7 @@
 # life-os-ai
 
-Python AI sidecar for Life OS. Gemini-primary, OpenAI-fallback.
+Python AI sidecar for Life OS. Supports a local/OpenAI-compatible
+endpoint first, then Gemini, then OpenAI fallback.
 Stateless. Ported from `src/lib/ai/tasks/` so the two implementations
 can run side-by-side during migration via the `USE_PYTHON_AI` feature
 flag on the TS side.
@@ -30,6 +31,14 @@ source .venv/bin/activate   # or .venv/Scripts/activate on Windows
 pip install -e ".[dev]"
 
 # Env -- at least one must be set.
+# ApplyPilot-style local/cloud OpenAI-compatible endpoint. When set, this
+# is tried first. Examples: Ollama, vLLM, LM Studio, private Cloud Run GPU.
+export LLM_URL=http://127.0.0.1:11434/v1
+export LLM_MODEL=gemma3:4b
+export LLM_API_KEY=optional-token
+export LLM_JSON_MODE=false   # default; set true only if the endpoint supports response_format
+
+# Hosted API fallbacks:
 export GEMINI_API_KEY=...
 # or
 export OPENAI_API_KEY=...
@@ -102,7 +111,8 @@ gcloud run deploy life-os-ai \
   --concurrency=10 \
   --min-instances=0 \
   --max-instances=4 \
-  --set-env-vars=GEMINI_API_KEY=...,OPENAI_API_KEY=...
+  --set-env-vars=LLM_URL=https://private-vllm-url/v1,LLM_MODEL=gemma3:4b \
+  --set-secrets=GEMINI_API_KEY=life-os-gemini-api-key:latest,OPENAI_API_KEY=life-os-openai-api-key:latest
 
 # Get the URL and set PYTHON_AI_URL on the main life-os service
 gcloud run services update life-os \

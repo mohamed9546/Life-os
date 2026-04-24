@@ -1,6 +1,6 @@
 """Smoke test: round-trip a job posting through parse + evaluate.
 
-Runs only when GEMINI_API_KEY or OPENAI_API_KEY is set in the env.
+Runs only when LLM_URL, GEMINI_API_KEY, or OPENAI_API_KEY is set in the env.
 Otherwise the tests are skipped so CI without secrets doesn't fail.
 """
 
@@ -15,6 +15,7 @@ from life_os_ai.llm import (
     LLMClient,
     ProviderConfig,
     _TruncatedOutput,
+    _provider_configs,
 )
 from life_os_ai.profile import DEFAULT_LIFE_OS_PROFILE, CandidateProfile
 from life_os_ai.tasks.evaluate_job import evaluate_job
@@ -22,16 +23,37 @@ from life_os_ai.tasks.parse_job import parse_job
 
 
 _HAS_PROVIDER = bool(
-    os.environ.get("GEMINI_API_KEY", "").strip()
+    os.environ.get("LLM_URL", "").strip()
+    or os.environ.get("GEMINI_API_KEY", "").strip()
     or os.environ.get("OPENAI_API_KEY", "").strip()
 )
 
 
+def _clear_provider_env() -> dict[str, str]:
+    saved = {}
+    for key in (
+        "LLM_URL",
+        "LLM_MODEL",
+        "LLM_API_KEY",
+        "LLM_PROVIDER_NAME",
+        "LLM_JSON_MODE",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        value = os.environ.pop(key, None)
+        if value is not None:
+            saved[key] = value
+    return saved
+
+
+def _restore_env(saved: dict[str, str]) -> None:
+    os.environ.update(saved)
+
+
 def test_parse_deterministic_fallback_without_llm():
     """With no provider, parse_job still returns via deterministic fallback."""
-    # Temporarily unset both to force fallback -- restore after.
-    saved_gemini = os.environ.pop("GEMINI_API_KEY", None)
-    saved_openai = os.environ.pop("OPENAI_API_KEY", None)
+    # Temporarily unset providers to force fallback -- restore after.
+    saved = _clear_provider_env()
     try:
         job, meta = parse_job(
             "Clinical Trial Assistant wanted in Glasgow. Entry-level role. "
@@ -42,10 +64,7 @@ def test_parse_deterministic_fallback_without_llm():
         assert meta.model == "deterministic-fallback"
         assert job.confidence < 0.5
     finally:
-        if saved_gemini:
-            os.environ["GEMINI_API_KEY"] = saved_gemini
-        if saved_openai:
-            os.environ["OPENAI_API_KEY"] = saved_openai
+        _restore_env(saved)
 
 
 def test_heuristic_evaluation_returns_sane_bands():
@@ -73,8 +92,7 @@ def test_heuristic_evaluation_returns_sane_bands():
     )
 
     # Force the heuristic by clearing provider keys for this call only.
-    saved_gemini = os.environ.pop("GEMINI_API_KEY", None)
-    saved_openai = os.environ.pop("OPENAI_API_KEY", None)
+    saved = _clear_provider_env()
     try:
         evaluation, meta = evaluate_job(
             clinical_entry, CandidateProfile(life_os=DEFAULT_LIFE_OS_PROFILE)
@@ -83,10 +101,7 @@ def test_heuristic_evaluation_returns_sane_bands():
         assert evaluation.fit_score >= 40
         assert meta.model == "heuristic"
     finally:
-        if saved_gemini:
-            os.environ["GEMINI_API_KEY"] = saved_gemini
-        if saved_openai:
-            os.environ["OPENAI_API_KEY"] = saved_openai
+        _restore_env(saved)
 
 
 def test_gemini_json_truncation_retries_native(monkeypatch):
@@ -115,6 +130,24 @@ def test_gemini_json_truncation_retries_native(monkeypatch):
     assert client.chat([], response_format="json") == '{"ok": true}'
     assert native_calls["count"] == 1
     assert client._use_native_gemini is True
+
+
+def test_llm_url_is_first_openai_compatible_provider():
+    """LLM_URL mirrors ApplyPilot: it becomes the preferred provider."""
+    saved = _clear_provider_env()
+    try:
+        os.environ["LLM_URL"] = "http://127.0.0.1:11434/v1"
+        os.environ["LLM_MODEL"] = "gemma3:4b"
+        os.environ["GEMINI_API_KEY"] = "gemini-key"
+        os.environ["OPENAI_API_KEY"] = "openai-key"
+
+        providers = _provider_configs()
+        assert [provider.name for provider in providers] == ["local", "gemini", "openai"]
+        assert providers[0].base_url == "http://127.0.0.1:11434/v1"
+        assert providers[0].model == "gemma3:4b"
+        assert providers[0].supports_json_mode is False
+    finally:
+        _restore_env(saved)
 
 
 @pytest.mark.skipif(not _HAS_PROVIDER, reason="No LLM provider configured")

@@ -46,15 +46,17 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Log provider config at startup so Cloud Run logs tell you immediately
     # which LLM will be used (vs silently falling back to a different one).
+    local_ok = bool(os.environ.get("LLM_URL", "").strip())
     gemini_ok = bool(os.environ.get("GEMINI_API_KEY", "").strip())
     openai_ok = bool(os.environ.get("OPENAI_API_KEY", "").strip())
     log.info(
-        "life-os-ai %s startup. gemini=%s openai=%s",
+        "life-os-ai %s startup. local=%s gemini=%s openai=%s",
         __version__,
+        "configured" if local_ok else "missing",
         "configured" if gemini_ok else "MISSING",
         "configured" if openai_ok else "MISSING",
     )
-    if not gemini_ok and not openai_ok:
+    if not local_ok and not gemini_ok and not openai_ok:
         log.error("NO LLM PROVIDER CONFIGURED -- all requests will return 503")
     yield
 
@@ -84,13 +86,15 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    local_ok = bool(os.environ.get("LLM_URL", "").strip())
     gemini_ok = bool(os.environ.get("GEMINI_API_KEY", "").strip())
     openai_ok = bool(os.environ.get("OPENAI_API_KEY", "").strip())
     return {
-        "ok": gemini_ok or openai_ok,
+        "ok": local_ok or gemini_ok or openai_ok,
         "service": "life-os-ai",
         "version": __version__,
         "providers": {
+            "local": "configured" if local_ok else "missing",
             "gemini": "configured" if gemini_ok else "missing",
             "openai": "configured" if openai_ok else "missing",
         },

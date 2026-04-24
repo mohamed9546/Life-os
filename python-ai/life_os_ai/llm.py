@@ -7,11 +7,12 @@ OpenAI share one request shape, with automatic fallback to Gemini's native
 models that aren't on the compat layer).
 
 Provider order:
-  1. GEMINI_API_KEY set -> Gemini (default model: gemini-2.5-flash)
-  2. OPENAI_API_KEY set -> OpenAI (default model: gpt-4o-mini)
+  1. LLM_URL set -> OpenAI-compatible local/cloud model endpoint
+  2. GEMINI_API_KEY set -> Gemini (default model: gemini-2.5-flash)
+  3. OPENAI_API_KEY set -> OpenAI (default model: gpt-4o-mini)
 
-When both are set, Gemini is primary, OpenAI is automatic fallback on
-persistent failure (after retries exhausted, before surfacing the error).
+When multiple providers are set, the sidecar tries them in order and falls
+through on persistent runtime/rate-limit failures.
 """
 
 from __future__ import annotations
@@ -108,16 +109,42 @@ def _is_stop_finish_reason(finish_reason: str | None) -> bool:
 
 
 class ProviderConfig:
-    """Resolved config for a single provider (Gemini or OpenAI)."""
+    """Resolved config for one OpenAI-compatible provider."""
 
-    def __init__(self, *, name: str, base_url: str, model: str, api_key: str) -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        base_url: str,
+        model: str,
+        api_key: str,
+        supports_json_mode: bool = True,
+    ) -> None:
         self.name = name
         self.base_url = base_url
         self.model = model
         self.api_key = api_key
+        self.supports_json_mode = supports_json_mode
 
 
-def _primary_config() -> ProviderConfig | None:
+def _local_config() -> ProviderConfig | None:
+    url = os.environ.get("LLM_URL", "").strip()
+    if not url:
+        return None
+    return ProviderConfig(
+        name=os.environ.get("LLM_PROVIDER_NAME", "local"),
+        base_url=url.rstrip("/"),
+        model=os.environ.get("LLM_MODEL", "local-model"),
+        api_key=os.environ.get("LLM_API_KEY", "").strip(),
+        # Ollama and many OpenAI-compatible servers reject OpenAI's
+        # response_format JSON mode. The prompts still require JSON, and the
+        # task layer has robust extraction/fallbacks.
+        supports_json_mode=os.environ.get("LLM_JSON_MODE", "").lower()
+        in ("1", "true", "yes", "on"),
+    )
+
+
+def _gemini_config() -> ProviderConfig | None:
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         return None
@@ -129,7 +156,7 @@ def _primary_config() -> ProviderConfig | None:
     )
 
 
-def _fallback_config() -> ProviderConfig | None:
+def _openai_config() -> ProviderConfig | None:
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         return None
@@ -139,6 +166,10 @@ def _fallback_config() -> ProviderConfig | None:
         model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
         api_key=key,
     )
+
+
+def _provider_configs() -> list[ProviderConfig]:
+    return [cfg for cfg in (_local_config(), _gemini_config(), _openai_config()) if cfg]
 
 
 # ---------------------------------------------------------------------------
@@ -238,17 +269,16 @@ class LLMClient:
         max_tokens: int,
         response_format: str | None,
     ) -> str:
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key}",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
         payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        if response_format == "json":
+        if response_format == "json" and self.config.supports_json_mode:
             payload["response_format"] = {"type": "json_object"}
 
         resp = self._client.post(
@@ -461,28 +491,20 @@ def chat(
     max_tokens: int = 1500,
     response_format: str | None = None,
 ) -> CallResult:
-    """Chat with automatic Gemini -> OpenAI fallback on persistent failure.
+    """Chat with automatic provider fallback on persistent failure.
 
-    On rate-limit or persistent error in the primary, falls back to OpenAI
-    if configured. Auth errors don't trigger fallback (they need user
-    intervention). Timeouts don't trigger fallback (the LLM client already
-    retried).
+    Provider order is local OpenAI-compatible endpoint, then Gemini, then
+    OpenAI. Auth errors don't trigger fallback (they need user intervention).
+    Timeouts don't trigger fallback (the LLM client already retried).
     """
-    primary = _primary_config()
-    fallback = _fallback_config()
+    attempts = _provider_configs()
 
-    if primary is None and fallback is None:
+    if not attempts:
         return CallResult(
             success=False,
-            error="No LLM provider configured. Set GEMINI_API_KEY or OPENAI_API_KEY.",
+            error="No LLM provider configured. Set LLM_URL, GEMINI_API_KEY, or OPENAI_API_KEY.",
             failure_kind="not_configured",
         )
-
-    attempts: list[ProviderConfig] = []
-    if primary is not None:
-        attempts.append(primary)
-    if fallback is not None and fallback.name != (primary.name if primary else None):
-        attempts.append(fallback)
 
     last_error: LLMError | None = None
     for idx, cfg in enumerate(attempts):
