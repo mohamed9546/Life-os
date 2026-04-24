@@ -70,12 +70,18 @@ Add to `.env.local` (or Cloud Run env):
 PYTHON_AI_URL=http://127.0.0.1:8000         # local dev
 # PYTHON_AI_URL=https://life-os-ai-xxx.run.app   # production
 USE_PYTHON_AI=true
+PYTHON_AI_AUTH=auto                         # local = none, Cloud Run = Google identity token
 ```
 
 When `USE_PYTHON_AI=true` AND `PYTHON_AI_URL` is reachable, `/api/ai/parse-job`
 and `/api/ai/evaluate-job` proxy to this service. On any sidecar error the
 TS routes fall back to their local implementations automatically -- the main
 app never breaks because the sidecar is broken.
+
+For production, keep `life-os-ai` private and grant `roles/run.invoker` only
+to the `life-os` runtime service account. The TS proxy fetches an identity
+token from the Cloud Run metadata server when `PYTHON_AI_AUTH=auto` or
+`PYTHON_AI_AUTH=google`.
 
 ## Deploy (Cloud Run)
 
