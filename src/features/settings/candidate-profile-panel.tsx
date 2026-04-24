@@ -13,6 +13,10 @@ interface CandidateProfileResponse {
   draft: CandidateProfileImportDraft | null;
 }
 
+function list<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 export function CandidateProfilePanel() {
   const [data, setData] = useState<CandidateProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -216,7 +220,7 @@ export function CandidateProfilePanel() {
             <div>
               <p className="text-xs font-semibold text-accent">Profile draft ready</p>
               <p className="text-sm text-text-primary mt-1">
-                Imported from {draft.sourceFiles.join(", ")} with confidence{" "}
+                Imported from {list(draft.sourceFiles).join(", ")} with confidence{" "}
                 {Math.round(draft.confidence * 100)}%.
               </p>
             </div>
@@ -224,9 +228,9 @@ export function CandidateProfilePanel() {
               {saving ? "Approving..." : "Approve draft"}
             </button>
           </div>
-          {draft.issues.length > 0 && (
+          {list(draft.issues).length > 0 && (
             <ul className="mt-3 space-y-1 text-sm text-text-secondary">
-              {draft.issues.map((issue, index) => (
+              {list(draft.issues).map((issue, index) => (
                 <li key={`${issue}-${index}`}>- {issue}</li>
               ))}
             </ul>
@@ -258,7 +262,7 @@ export function CandidateProfilePanel() {
         />
         <Field
           label="Target titles"
-          value={profile.targetTitles.join(", ")}
+          value={list(profile.targetTitles).join(", ")}
           onChange={(value) =>
             updateProfileField(
               "targetTitles",
@@ -292,7 +296,7 @@ export function CandidateProfilePanel() {
         />
         <TextAreaField
           label="Strengths"
-          value={profile.strengths.join("\n")}
+          value={list(profile.strengths).join("\n")}
           onChange={(value) =>
             updateProfileField(
               "strengths",
@@ -304,7 +308,7 @@ export function CandidateProfilePanel() {
         />
         <TextAreaField
           label="Experience highlights"
-          value={profile.experienceHighlights.join("\n")}
+          value={list(profile.experienceHighlights).join("\n")}
           onChange={(value) =>
             updateProfileField(
               "experienceHighlights",
@@ -324,7 +328,7 @@ export function CandidateProfilePanel() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <TextAreaField
           label="Education"
-          value={profile.education.join("\n")}
+          value={list(profile.education).join("\n")}
           onChange={(value) =>
             updateProfileField(
               "education",
@@ -336,7 +340,7 @@ export function CandidateProfilePanel() {
         />
         <TextAreaField
           label="Location constraints"
-          value={profile.locationConstraints.join("\n")}
+          value={list(profile.locationConstraints).join("\n")}
           onChange={(value) =>
             updateProfileField(
               "locationConstraints",

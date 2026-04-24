@@ -1,8 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabasePublishableKey, getSupabaseUrl } from "./env";
+import { isLocalOnlyMode } from "@/lib/env/local-only";
 
 export async function updateSession(request: NextRequest) {
+  if (isLocalOnlyMode()) {
+    return NextResponse.next({ request });
+  }
+
   const url = getSupabaseUrl();
   const key = getSupabasePublishableKey();
 

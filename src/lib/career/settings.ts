@@ -23,6 +23,98 @@ function warnSettingsFallback(operation: string, error: unknown) {
   );
 }
 
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeProfile(
+  profile: Partial<CareerProfile> | null | undefined,
+  userId: string,
+  email: string
+): CareerProfile {
+  const defaults = createDefaultCareerProfile(userId, email);
+
+  return {
+    ...defaults,
+    ...profile,
+    id: userId,
+    email: profile?.email || email,
+    fullName: profile?.fullName ?? defaults.fullName,
+    onboardingCompleted: Boolean(
+      profile?.onboardingCompleted ?? defaults.onboardingCompleted
+    ),
+    targetRoleTracks: Array.isArray(profile?.targetRoleTracks)
+      ? (profile.targetRoleTracks as CareerProfile["targetRoleTracks"])
+      : defaults.targetRoleTracks,
+    targetLocations: Array.isArray(profile?.targetLocations)
+      ? profile.targetLocations
+      : defaults.targetLocations,
+    remotePreference: profile?.remotePreference || defaults.remotePreference,
+    preferredSeniority:
+      profile?.preferredSeniority || defaults.preferredSeniority,
+    notificationFrequency:
+      profile?.notificationFrequency || defaults.notificationFrequency,
+    isAdmin: Boolean(profile?.isAdmin ?? defaults.isAdmin),
+    createdAt: profile?.createdAt || defaults.createdAt,
+    updatedAt: profile?.updatedAt || defaults.updatedAt,
+  };
+}
+
+function normalizeSearch(
+  search: Partial<SavedSearch>,
+  userId: string,
+  index: number
+): SavedSearch {
+  const now = new Date().toISOString();
+
+  return {
+    id: search.id || `${userId}-search-${index}`,
+    userId,
+    label: search.label || "Saved search",
+    keywords: asArray(search.keywords).filter(Boolean),
+    location: search.location || "United Kingdom",
+    remoteOnly: Boolean(search.remoteOnly),
+    radius: typeof search.radius === "number" ? search.radius : 0,
+    enabled: search.enabled ?? true,
+    createdAt: search.createdAt || now,
+    updatedAt: search.updatedAt || now,
+  };
+}
+
+function normalizeSourcePreference(
+  source: Partial<SourcePreference>,
+  userId: string,
+  index: number
+): SourcePreference {
+  const now = new Date().toISOString();
+  const sourceId = source.sourceId || SOURCE_CATALOG[index]?.id || "unknown";
+
+  return {
+    id: source.id || `${userId}-${sourceId}`,
+    userId,
+    sourceId,
+    enabled: Boolean(source.enabled),
+    createdAt: source.createdAt || now,
+    updatedAt: source.updatedAt || now,
+  };
+}
+
+function normalizeSettingsBundle(
+  settings: Partial<UserSettingsBundle>,
+  userId: string,
+  email: string
+): UserSettingsBundle {
+  return {
+    profile: normalizeProfile(settings.profile, userId, email),
+    savedSearches: asArray(settings.savedSearches).map((search, index) =>
+      normalizeSearch(search, userId, index)
+    ),
+    sourcePreferences: asArray(settings.sourcePreferences).map((source, index) =>
+      normalizeSourcePreference(source, userId, index)
+    ),
+  };
+}
+
 async function loadFallbackSettings(userId: string, email: string) {
   const [profile, savedSearches, sourcePreferences] = await Promise.all([
     loadFallbackProfile(userId, email),
@@ -30,14 +122,18 @@ async function loadFallbackSettings(userId: string, email: string) {
     loadFallbackSourcePreferences(userId),
   ]);
 
-  return { profile, savedSearches, sourcePreferences };
+  return normalizeSettingsBundle(
+    { profile, savedSearches, sourcePreferences },
+    userId,
+    email
+  );
 }
 
 async function loadFallbackProfile(userId: string, email: string) {
   const profiles = await readCollection<CareerProfile>(Collections.CAREER_PROFILES);
   const existing = profiles.find((profile) => profile.id === userId);
   if (existing) {
-    return existing;
+    return normalizeProfile(existing, userId, email);
   }
 
   const created = createDefaultCareerProfile(userId, email);
@@ -90,17 +186,21 @@ async function loadFallbackSourcePreferences(userId: string) {
 
 async function writeFallbackProfile(profile: CareerProfile) {
   const profiles = await readCollection<CareerProfile>(Collections.CAREER_PROFILES);
+  const normalized = normalizeProfile(profile, profile.id, profile.email);
   const nextProfiles = profiles.filter((item) => item.id !== profile.id);
-  nextProfiles.push(profile);
+  nextProfiles.push(normalized);
   await writeCollection(Collections.CAREER_PROFILES, nextProfiles);
-  return profile;
+  return normalized;
 }
 
 async function writeFallbackSavedSearches(userId: string, searches: SavedSearch[]) {
   const existing = await readCollection<SavedSearch>(Collections.SAVED_SEARCHES);
   const filtered = existing.filter((item) => item.userId !== userId);
-  await writeCollection(Collections.SAVED_SEARCHES, [...filtered, ...searches]);
-  return searches;
+  const normalized = searches.map((search, index) =>
+    normalizeSearch(search, userId, index)
+  );
+  await writeCollection(Collections.SAVED_SEARCHES, [...filtered, ...normalized]);
+  return normalized;
 }
 
 async function writeFallbackSourcePreferences(
@@ -111,8 +211,11 @@ async function writeFallbackSourcePreferences(
     Collections.SOURCE_PREFERENCES
   );
   const filtered = existing.filter((item) => item.userId !== userId);
-  await writeCollection(Collections.SOURCE_PREFERENCES, [...filtered, ...preferences]);
-  return preferences;
+  const normalized = preferences.map((source, index) =>
+    normalizeSourcePreference(source, userId, index)
+  );
+  await writeCollection(Collections.SOURCE_PREFERENCES, [...filtered, ...normalized]);
+  return normalized;
 }
 
 export async function getUserSettings(
@@ -189,11 +292,11 @@ export async function getUserSettings(
       }
     }
 
-    return {
-      profile,
-      savedSearches,
-      sourcePreferences,
-    };
+    return normalizeSettingsBundle(
+      { profile, savedSearches, sourcePreferences },
+      userId,
+      email
+    );
   } catch (err) {
     warnSettingsFallback("settings read", err);
     return loadFallbackSettings(userId, email);
@@ -216,19 +319,23 @@ export async function upsertUserProfile(
     email,
     updatedAt: new Date().toISOString(),
   };
+  const normalized = normalizeProfile(next, userId, email);
 
   if (!supabase) {
-    return writeFallbackProfile(next);
+    return writeFallbackProfile(normalized);
   }
 
-  return writeDbProfile(next);
+  return writeDbProfile(normalized);
 }
 
 export async function replaceSavedSearches(userId: string, searches: SavedSearch[]) {
   const supabase = createServiceClient();
+  const normalizedSearches = searches.map((search, index) =>
+    normalizeSearch(search, userId, index)
+  );
 
   if (!supabase) {
-    return writeFallbackSavedSearches(userId, searches);
+    return writeFallbackSavedSearches(userId, normalizedSearches);
   }
 
   try {
@@ -239,11 +346,11 @@ export async function replaceSavedSearches(userId: string, searches: SavedSearch
 
     if (deleteResult.error) throw deleteResult.error;
 
-    if (searches.length === 0) {
+    if (normalizedSearches.length === 0) {
       return [];
     }
 
-    const payload = searches.map((search) => ({
+    const payload = normalizedSearches.map((search) => ({
       id: uuid(),
       user_id: userId,
       label: search.label,
@@ -265,7 +372,7 @@ export async function replaceSavedSearches(userId: string, searches: SavedSearch
     return (data || []).map(mapSearchFromDb);
   } catch (err) {
     warnSettingsFallback("saved search write", err);
-    return writeFallbackSavedSearches(userId, searches);
+    return writeFallbackSavedSearches(userId, normalizedSearches);
   }
 }
 
@@ -274,9 +381,12 @@ export async function replaceSourcePreferences(
   preferences: SourcePreference[]
 ) {
   const supabase = createServiceClient();
+  const normalizedPreferences = preferences.map((source, index) =>
+    normalizeSourcePreference(source, userId, index)
+  );
 
   if (!supabase) {
-    return writeFallbackSourcePreferences(userId, preferences);
+    return writeFallbackSourcePreferences(userId, normalizedPreferences);
   }
 
   try {
@@ -287,11 +397,11 @@ export async function replaceSourcePreferences(
 
     if (deleteResult.error) throw deleteResult.error;
 
-    if (preferences.length === 0) {
+    if (normalizedPreferences.length === 0) {
       return [];
     }
 
-    const payload = preferences.map((source) => ({
+    const payload = normalizedPreferences.map((source) => ({
       id: uuid(),
       user_id: userId,
       source_id: source.sourceId,
@@ -309,7 +419,7 @@ export async function replaceSourcePreferences(
     return (data || []).map(mapSourceFromDb);
   } catch (err) {
     warnSettingsFallback("source preference write", err);
-    return writeFallbackSourcePreferences(userId, preferences);
+    return writeFallbackSourcePreferences(userId, normalizedPreferences);
   }
 }
 

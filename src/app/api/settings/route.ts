@@ -36,7 +36,7 @@ export async function PUT(request: NextRequest) {
       await upsertUserProfile(user.id, user.email, body.profile);
     }
 
-    if (body.savedSearches) {
+    if (Array.isArray(body.savedSearches)) {
       await replaceSavedSearches(
         user.id,
         body.savedSearches.map((search) => ({
@@ -48,7 +48,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    if (body.sourcePreferences) {
+    if (Array.isArray(body.sourcePreferences)) {
       await replaceSourcePreferences(
         user.id,
         body.sourcePreferences.map((source) => ({

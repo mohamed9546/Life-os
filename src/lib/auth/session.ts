@@ -2,6 +2,7 @@ import { cache } from "react";
 import { AuthenticatedAppUser } from "@/types";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { hasSupabaseEnv, isCareerBetaAdminEmail } from "@/lib/supabase/env";
+import { isLocalOnlyMode } from "@/lib/env/local-only";
 
 const PREVIEW_USER: AuthenticatedAppUser = {
   id: process.env.LIFE_OS_DEFAULT_USER_ID || "preview-user",
@@ -11,7 +12,7 @@ const PREVIEW_USER: AuthenticatedAppUser = {
 };
 
 export const getCurrentAppUser = cache(async (): Promise<AuthenticatedAppUser | null> => {
-  if (!hasSupabaseEnv()) {
+  if (isLocalOnlyMode() || !hasSupabaseEnv()) {
     return PREVIEW_USER;
   }
 

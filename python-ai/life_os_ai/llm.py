@@ -119,20 +119,28 @@ class ProviderConfig:
         model: str,
         api_key: str,
         supports_json_mode: bool = True,
+        native_ollama: bool = False,
     ) -> None:
         self.name = name
         self.base_url = base_url
         self.model = model
         self.api_key = api_key
         self.supports_json_mode = supports_json_mode
+        self.native_ollama = native_ollama
 
 
 def _local_config() -> ProviderConfig | None:
     url = os.environ.get("LLM_URL", "").strip()
     if not url:
         return None
+    provider_name = os.environ.get("LLM_PROVIDER_NAME", "local")
+    native_ollama = (
+        os.environ.get("LLM_PROVIDER_NAME", "").lower() == "ollama"
+        or "127.0.0.1:11434" in url
+        or "localhost:11434" in url
+    )
     return ProviderConfig(
-        name=os.environ.get("LLM_PROVIDER_NAME", "local"),
+        name=provider_name,
         base_url=url.rstrip("/"),
         model=os.environ.get("LLM_MODEL", "local-model"),
         api_key=os.environ.get("LLM_API_KEY", "").strip(),
@@ -141,6 +149,7 @@ def _local_config() -> ProviderConfig | None:
         # task layer has robust extraction/fallbacks.
         supports_json_mode=os.environ.get("LLM_JSON_MODE", "").lower()
         in ("1", "true", "yes", "on"),
+        native_ollama=native_ollama,
     )
 
 
@@ -314,6 +323,59 @@ class LLMClient:
                 failure_kind="invalid_response",
             ) from exc
 
+    # -- Ollama native ------------------------------------------------------
+
+    def _chat_ollama_native(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        response_format: str | None,
+    ) -> str:
+        prompt_parts: list[str] = []
+        for msg in messages:
+            role = msg.get("role", "user").upper()
+            content = msg.get("content", "")
+            if content:
+                prompt_parts.append(f"{role}:\n{content}")
+
+        base_url = self.config.base_url.removesuffix("/v1").rstrip("/")
+        payload: dict[str, Any] = {
+            "model": self.config.model,
+            "prompt": "\n\n".join(prompt_parts),
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+        if response_format == "json":
+            payload["format"] = "json"
+
+        resp = self._client.post(
+            f"{base_url}/api/generate",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        content = data.get("response")
+        if not content and isinstance(data.get("thinking"), str):
+            # Some small Qwen/Gemma-thinking builds emit JSON under
+            # `thinking` while leaving `response` empty when format=json.
+            content = data["thinking"]
+        if not isinstance(content, str):
+            raise LLMError(
+                f"{self.config.name} returned unexpected Ollama shape: {str(data)[:200]}",
+                failure_kind="invalid_response",
+            )
+
+        finish_reason = data.get("done_reason")
+        if _is_truncated_finish_reason(finish_reason):
+            raise _TruncatedOutput(self.config.name, finish_reason, content)
+        return content
+
     # -- Public API --------------------------------------------------------
 
     def chat(
@@ -333,6 +395,10 @@ class LLMClient:
 
         for attempt in range(_MAX_RETRIES):
             try:
+                if self.config.native_ollama:
+                    return self._chat_ollama_native(
+                        messages, temperature, max_tokens, response_format
+                    )
                 if self._use_native_gemini:
                     return self._chat_gemini_native(messages, temperature, max_tokens, response_format)
                 return self._chat_compat(messages, temperature, max_tokens, response_format)

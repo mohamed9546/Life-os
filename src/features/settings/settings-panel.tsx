@@ -23,6 +23,26 @@ type JobsStatsResponse = {
   };
 };
 
+function list<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeSettings(data: UserSettingsBundle): UserSettingsBundle {
+  return {
+    ...data,
+    profile: {
+      ...data.profile,
+      targetLocations: list(data.profile?.targetLocations),
+      targetRoleTracks: list(data.profile?.targetRoleTracks),
+    },
+    savedSearches: list(data.savedSearches).map((search) => ({
+      ...search,
+      keywords: list(search.keywords),
+    })),
+    sourcePreferences: list(data.sourcePreferences),
+  };
+}
+
 export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
   const settingsApi = useApi<SettingsResponse>();
   const statsApi = useApi<JobsStatsResponse>();
@@ -34,7 +54,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
   useEffect(() => {
     settingsApi.call("/api/settings").then((data) => {
       if (data) {
-        setSettings(data);
+        setSettings(normalizeSettings(data));
       }
     });
 
@@ -66,7 +86,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
     setSaving(false);
 
     if (result) {
-      setSettings(result);
+      setSettings(normalizeSettings(result));
       setSaveMessage(message);
       setTimeout(() => setSaveMessage(""), 3000);
     }
@@ -314,7 +334,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
               <Label>Target locations</Label>
               <input
                 className="input"
-                value={settings.profile.targetLocations.join(", ")}
+                value={list(settings.profile.targetLocations).join(", ")}
                 onChange={(event) =>
                   updateProfile({
                     targetLocations: event.target.value
@@ -357,7 +377,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
               <Label>Role tracks</Label>
               <input
                 className="input"
-                value={settings.profile.targetRoleTracks.join(", ")}
+                value={list(settings.profile.targetRoleTracks).join(", ")}
                 onChange={(event) =>
                   updateProfile({
                     targetRoleTracks: event.target.value
@@ -499,7 +519,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
                   <Label>Keywords</Label>
                   <input
                     className="input"
-                    value={search.keywords.join(", ")}
+                    value={list(search.keywords).join(", ")}
                     onChange={(event) =>
                       updateSearch(search.id, {
                         keywords: event.target.value

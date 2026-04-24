@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { UserSettingsBundle } from "@/types";
 import { useApi } from "@/hooks/use-api";
 
+function list<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 export function OnboardingForm({
   initialSettings,
 }: {
@@ -14,7 +18,7 @@ export function OnboardingForm({
   const settingsApi = useApi<UserSettingsBundle>();
   const [name, setName] = useState(initialSettings.profile.fullName || "");
   const [locations, setLocations] = useState(
-    initialSettings.profile.targetLocations.join(", ")
+    list(initialSettings.profile.targetLocations).join(", ")
   );
   const [seniority, setSeniority] = useState(
     initialSettings.profile.preferredSeniority
@@ -23,7 +27,7 @@ export function OnboardingForm({
     initialSettings.profile.remotePreference
   );
   const [roleTracks, setRoleTracks] = useState<string[]>(
-    initialSettings.profile.targetRoleTracks
+    list(initialSettings.profile.targetRoleTracks)
   );
 
   const toggleRoleTrack = (roleTrack: string) => {

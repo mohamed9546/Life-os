@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         const result = await callPythonAI<
           { rawText: string; metadata?: Record<string, string> },
           SidecarResponse
-        >("/parse-job", { rawText, metadata });
+        >("/parse-job", { rawText, metadata }, 300_000);
 
         if (result.success && result.data) {
           return NextResponse.json({

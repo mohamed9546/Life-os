@@ -1,12 +1,17 @@
+import { isLocalOnlyMode } from "@/lib/env/local-only";
+
 export function getSupabaseUrl(): string | null {
+  if (isLocalOnlyMode()) return null;
   return process.env.NEXT_PUBLIC_SUPABASE_URL || null;
 }
 
 export function getSupabasePublishableKey(): string | null {
+  if (isLocalOnlyMode()) return null;
   return process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || null;
 }
 
 export function getSupabaseServiceRoleKey(): string | null {
+  if (isLocalOnlyMode()) return null;
   return process.env.SUPABASE_SERVICE_ROLE_KEY || null;
 }
 

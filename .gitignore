@@ -6,6 +6,7 @@ node_modules/
 !.env.staging.example
 !.env.local.template
 data/
+backups/
 *.log
 .DS_Store
 Thumbs.db

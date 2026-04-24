@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
         const result = await callPythonAI<
           { job: ParsedJobPosting },
           SidecarResponse
-        >("/evaluate-job", { job: validation.data });
+        >("/evaluate-job", { job: validation.data }, 360_000);
 
         if (result.success && result.data) {
           return NextResponse.json({

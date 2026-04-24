@@ -24,30 +24,12 @@ log = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = (
-    "You are a career strategy AI specialising in entry-level UK life sciences, clinical "
-    "operations, QA, regulatory, pharmacovigilance, and medical information transitions.\n"
-    "Treat the candidate as entry/support-level, not senior. They have MSc Clinical "
-    "Pharmacology, GCP training, clinical research internship exposure, regulated "
-    "healthcare documentation experience, SOP/compliance-heavy workflow exposure, and "
-    "governance/controlled-document exposure.\n"
-    "Strong-fit work includes regulated documentation, clinical trial support, study "
-    "coordination, SOP/compliance-heavy admin, healthcare administration, research "
-    "governance, and regulated support functions.\n"
-    "Primary target titles: Clinical Trial Assistant, Clinical Research Coordinator, "
-    "Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, "
-    "Study Start-Up Assistant/Coordinator, Site Activation Assistant/Coordinator, Trial "
-    "Administrator, Clinical Project Assistant, In-House CRA, and Junior CRA only if "
-    "clearly junior/entry-level.\n"
-    "Secondary target titles: QA Associate, Quality Systems Associate, Document Control "
-    "Associate, Regulatory Affairs Assistant, Regulatory Operations Assistant, "
-    "Pharmacovigilance Associate, Drug Safety Associate, Medical Information Associate, "
-    "Research Governance, and Research Support.\n"
-    "Severely penalise tax/accounting/payroll/finance operations, legal assistant roles, "
-    "wet-lab execution, field sales/territory roles, GPhC-essential roles, "
-    "community-pharmacy-only roles, and senior/leadership roles.\n"
-    "Always respond with valid JSON matching the exact schema requested.\n"
-    "Be realistic and strategic -- never flattering. This candidate has transferable skills "
-    "but needs stepping-stone roles, not stretch goals."
+    "Evaluate entry-level UK life-sciences jobs for a candidate moving into clinical "
+    "operations, QA, regulatory, pharmacovigilance, or medical information. Reward CTA, "
+    "trial coordination, TMF/eTMF, GCP, SOP, documentation, governance, QA, regulatory, "
+    "PV, medinfo, and junior/support roles. Penalise senior roles, retail/community "
+    "pharmacy, finance/tax/payroll, legal assistant, field sales, and wet-lab execution. "
+    "Return valid JSON only."
 )
 
 
@@ -57,9 +39,10 @@ def _build_prompt(job: ParsedJobPosting, profile_block: str) -> str:
     red_flags = ", ".join(job.red_flags) if job.red_flags else "None"
 
     return f"""\
-Evaluate the following job against the user profile below and return a JSON object.
+Evaluate this job against the candidate profile. Be realistic for an entry/support-level transition.
 
-{profile_block}
+CANDIDATE:
+{profile_block[:1800]}
 
 JOB TO EVALUATE:
 Title: {job.title}
@@ -76,7 +59,7 @@ Nice to Haves: {nice_to_haves}
 Red Flags: {red_flags}
 Summary: {job.summary}
 
-Return exactly this JSON structure:
+Return exactly this compact JSON object:
 {{
   "fitScore": 0-100,
   "redFlagScore": 0-100,
@@ -90,64 +73,7 @@ Return exactly this JSON structure:
   "confidence": 0.0 to 1.0
 }}
 
-VISA RISK LOGIC:
-- green: No explicit anti-visa wording, no permanent-right-to-work restriction
-- amber: "no sponsorship available", "must already have right to work", ambiguous
-- red: "cannot hire visa holders", "must have permanent right to work",
-       "no candidates on visas", "must not require sponsorship now or in future"
-
-ACTION RECOMMENDATION LOGIC:
-- apply now = strong fit, manageable risk, strategically valuable
-- apply if time = medium fit or amber constraints
-- skip = weak fit, irrelevant family, or strong visa/seniority mismatch
-
-SCORING GUIDE:
-- fitScore 70-100: Strong match for CTA, clinical operations, QA, regulatory, PV, or medinfo
-- fitScore 40-69: Moderate match, worth considering if interviewability and strategic value credible
-- fitScore 20-39: Weak match, only if nothing better
-- fitScore 0-19: Poor match, likely reject
-
-- redFlagScore 0-20: Few concerns
-- redFlagScore 21-50: Some concerns worth noting
-- redFlagScore 51-100: Significant red flags
-
-SCORING RULES -- REWARDS (apply to fitScore):
-- Primary target role (CTA, Clinical Research Coordinator, Clinical Operations Assistant /
-  Coordinator, Study Start-Up, Site Activation, Trial Administrator, Clinical Project
-  Assistant, In-House CRA, or clearly junior CRA): +25
-- Secondary target role (QA Associate, Quality Systems Associate, Document Control,
-  Regulatory Affairs / Operations Assistant, Pharmacovigilance / Drug Safety Associate,
-  Medical Information Associate, Research Governance, or Research Support): +18
-- Role explicitly values ICH-GCP, GCP, TMF/eTMF, ISF, essential documents, CTMS, SOP,
-  protocol compliance, submissions support, filing/archiving, audit readiness, governance,
-  or clinical documentation: +15
-- Entry/junior/assistant/coordinator/support/administrator seniority that does not
-  require prior industry experience: +12
-- Glasgow, Scotland, UK remote/hybrid, or strong London hybrid fit: +5
-
-SCORING RULES -- PENALTIES (apply to fitScore and redFlagScore):
-- Role is Community Pharmacy Manager, Locum Pharmacist, Retail Pharmacy, Dispensary
-  Manager, or any pharmacy retail role: fitScore -40, redFlagScore +30
-- Role title or description involves Tax, Accountant, Chartered Tax Advisor, Finance,
-  Audit, or CTA in a financial context: fitScore -50, redFlagScore +40 (hard reject)
-- Role is lab-heavy bench scientist, molecular biologist, or requires active wet-lab
-  work unrelated to oversight: fitScore -25, redFlagScore +20
-- Role requires more than 5 years of industry experience: fitScore -20
-- Senior/Director/VP with mandatory line management, extensive travel, or strong visa
-  barriers: fitScore -15, redFlagScore +15
-- Field sales, territory manager, business development representative, legal assistant,
-  insurance, claims handler, veterinary, dental sales, or GPhC-registration-essential
-  roles: fitScore -50, redFlagScore +40
-- Ireland-relevant roles can be flagged but should not rank above strong UK / Scotland /
-  London-hybrid matches unless explicitly requested.
-
-Priority bands:
-- high: fitScore >= 65 AND redFlagScore < 40
-- medium: fitScore >= 40 AND redFlagScore < 60
-- low: fitScore >= 20 AND redFlagScore < 70
-- reject: everything else
-
-Respond with ONLY the JSON object."""
+Rules: high=70+, medium=40-69, low=20-39, reject<20. green visa=no concern, amber=right-to-work ambiguity, red=explicit no sponsorship. Use short strings and max 2 items per array. Respond with only JSON."""
 
 
 # ---------------------------------------------------------------------------
@@ -317,9 +243,7 @@ def evaluate_job(
             {"role": "user", "content": _build_prompt(job, profile_block)},
         ],
         temperature=0.1,
-        # 2048 tokens gives verbose evaluations enough room while provider
-        # truncation is handled by the LLM client before JSON parsing here.
-        max_tokens=2048,
+        max_tokens=700,
         response_format="json",
     )
 

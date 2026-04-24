@@ -5,6 +5,10 @@
 
 import { readObject, writeObject, ConfigFiles } from "@/lib/storage";
 import { AIConfig, AITaskType } from "@/types";
+import { isLocalOnlyMode } from "@/lib/env/local-only";
+
+const LOCAL_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+const LOCAL_OLLAMA_MODEL = "qwen3.5:2b";
 
 export const AI_TASK_ORDER: AITaskType[] = [
   "health-test",
@@ -32,13 +36,13 @@ export const AI_TASK_ORDER: AITaskType[] = [
 ];
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  provider: "gemini",
-  mode: "cloud",
+  provider: "ollama",
+  mode: "local",
   enabled: true,
-  baseUrl: process.env.OLLAMA_BASE_URL || "",
-  apiKey: process.env.GEMINI_API_KEY || null,
-  compatibilityMode: "gemini", // Avoids Ollama health check crash
-  model: "gemini-2.5-flash",
+  baseUrl: process.env.OLLAMA_BASE_URL || LOCAL_OLLAMA_BASE_URL,
+  apiKey: null,
+  compatibilityMode: "ollama",
+  model: LOCAL_OLLAMA_MODEL,
   fallbackModel: null,
   timeoutMs: 45_000,
   temperature: 0.15,
@@ -51,7 +55,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "health-test": {
       enabled: true,
       label: "Health test",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 12_000,
       retryAttempts: 0,
@@ -61,7 +65,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "parse-job": {
       enabled: true,
       label: "Parse job posting",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 35_000,
       retryAttempts: 0,
@@ -71,7 +75,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "evaluate-job": {
       enabled: true,
       label: "Evaluate job fit",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 45_000,
       retryAttempts: 0,
@@ -81,7 +85,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "categorize-transaction": {
       enabled: true,
       label: "Categorize transaction",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -91,7 +95,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-candidate-profile": {
       enabled: true,
       label: "Extract candidate profile",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 35_000,
       retryAttempts: 0,
@@ -101,7 +105,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-money": {
       enabled: true,
       label: "Summarize money state",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -111,7 +115,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-week": {
       enabled: true,
       label: "Summarize week",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -121,7 +125,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-decision": {
       enabled: true,
       label: "Summarize decision",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -131,7 +135,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-decision-patterns": {
       enabled: true,
       label: "Summarize decision patterns",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 25_000,
       retryAttempts: 0,
@@ -141,7 +145,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "suggest-routine-focus": {
       enabled: true,
       label: "Suggest routine focus",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -151,7 +155,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "generate-followup": {
       enabled: true,
       label: "Generate follow-up plan",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -161,7 +165,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "generate-outreach": {
       enabled: true,
       label: "Generate outreach strategy",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -171,7 +175,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "chat": {
       enabled: true,
       label: "AI assistant chat",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -181,7 +185,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "tailor-cv": {
       enabled: true,
       label: "Auto-Tailor CV",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 45_000,
       retryAttempts: 0,
@@ -191,7 +195,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "linkedin-intro": {
       enabled: true,
       label: "LinkedIn intro generator",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 20_000,
       retryAttempts: 0,
@@ -201,7 +205,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "cover-letter": {
       enabled: true,
       label: "Cover letter generator",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -211,7 +215,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "cv-optimize": {
       enabled: true,
       label: "CV optimizer (ATS)",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 40_000,
       retryAttempts: 0,
@@ -221,7 +225,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "interview-prep": {
       enabled: true,
       label: "Interview question generator",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 40_000,
       retryAttempts: 0,
@@ -231,7 +235,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "salary-lookup": {
       enabled: true,
       label: "Salary range lookup",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 15_000,
       retryAttempts: 0,
@@ -241,7 +245,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "skill-gap": {
       enabled: true,
       label: "Skill gap analyzer",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -251,7 +255,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-job-from-scrape": {
       enabled: true,
       label: "Extract job from scraped page",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -261,7 +265,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-job-list-from-scrape": {
       enabled: true,
       label: "Extract job list from scraped page",
-      model: "gemini-2.5-flash",
+      model: LOCAL_OLLAMA_MODEL,
       fallbackModel: null,
       timeoutMs: 30_000,
       retryAttempts: 0,
@@ -308,6 +312,43 @@ function mergeTaskSettings(
 }
 
 function applyEnvOverrides(config: AIConfig): AIConfig {
+  if (isLocalOnlyMode()) {
+    const model = process.env.OLLAMA_MODEL || LOCAL_OLLAMA_MODEL;
+    const baseUrl = normalizeBaseUrl(
+      process.env.OLLAMA_BASE_URL || config.baseUrl || LOCAL_OLLAMA_BASE_URL
+    );
+
+    return {
+      ...config,
+      provider: "ollama",
+      mode: "local",
+      enabled: true,
+      baseUrl,
+      apiKey: null,
+      compatibilityMode: "ollama",
+      model,
+      fallbackModel: null,
+      taskSettings: Object.fromEntries(
+        AI_TASK_ORDER.map((taskType) => {
+          const task = config.taskSettings[taskType];
+          const timeoutMs =
+            typeof task.timeoutMs === "number" && task.timeoutMs > 0
+              ? Math.min(task.timeoutMs, 120_000)
+              : DEFAULT_AI_CONFIG.taskSettings[taskType].timeoutMs;
+          return [
+            taskType,
+            {
+              ...task,
+              model,
+              fallbackModel: null,
+              timeoutMs,
+            },
+          ];
+        })
+      ) as AIConfig["taskSettings"],
+    };
+  }
+
   return {
     ...config,
     baseUrl: normalizeBaseUrl(process.env.OLLAMA_BASE_URL || config.baseUrl),

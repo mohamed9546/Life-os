@@ -1,169 +1,94 @@
 # Life OS
 
-Single-tenant personal operating system. Ingests jobs from 20+ UK/remote
-sources, scores them against a career profile with Gemini, and keeps
-everything — jobs, money, decisions, routines, weekly reviews —
-synced to Supabase so the laptop and phone see the same state.
+Single-tenant personal operating system. It ingests UK/remote job sources, scores roles against a career profile with local Ollama, and stores everything on disk in `data/*.json`.
 
-Built with Next.js 14 (App Router), TypeScript, Tailwind, and Supabase
-(Postgres + RLS + `storage_kv`).
-
----
+Built with Next.js 14, TypeScript, Tailwind, Ollama, and a local Python FastAPI sidecar for the first migrated AI tasks.
 
 ## Features
 
-- **Career pipeline.** Pulls jobs in parallel from Adzuna, Reed, Jooble,
-  Findwork, The Muse, Greenhouse, Lever, Remotive, Himalayas, SerpAPI,
-  LinkedIn (scraped / RapidAPI), Guardian, Careerjet, WeWorkRemotely,
-  Arbeitnow, Bright Network, Indeed RSS, TotalJobs, Jobs.ac.uk.
-  Dedupe across all sources, Gemini parse + fit-score, deterministic
-  relevance gates, kanban tracker.
-- **AI analyst.** Paste any job posting, get structured parse + fit
-  score + action recommendation. Fallback to heuristic scoring when
-  Gemini is rate-limited or down.
-- **Career tools.** Cover-letter generator, CV optimizer (ATS score),
-  interview prep, salary lookup, skill-gap analyzer.
-- **Life OS surfaces.** Money (transaction categorization + weekly
-  money review), decisions (pattern review), routines (streaks + AI
-  focus suggestion), goals, journal, weekly review, morning briefing.
-- **Background worker.** `npm run worker` — continuous loop that runs
-  enabled tasks (fetch / enrich / weekly review / money review) on a
-  schedule with rate-limit awareness.
-- **Cloud persistence.** Writes go through a thin storage façade that
-  prefers Supabase and falls back to `data/*.json` on disk. Your
-  laptop can be closed and your phone still sees everything.
+- **Career pipeline.** Pulls jobs from Adzuna, Reed, Jooble, Findwork, The Muse, Greenhouse, Lever, Remotive, Himalayas, SerpAPI, LinkedIn, Guardian, Careerjet, WeWorkRemotely, Arbeitnow, Bright Network, Indeed RSS, TotalJobs, and Jobs.ac.uk.
+- **Local AI analyst.** Paste a job posting and get structured parse, fit score, and action recommendation. `parse-job` and `evaluate-job` can run through `python-ai`; other tasks use the TypeScript Ollama client.
+- **Career tools.** Cover-letter generation, CV optimization, interview prep, salary lookup, and skill-gap analysis.
+- **Life OS surfaces.** Money, decisions, routines, goals, journal, weekly review, morning briefing, and worker status.
+- **Local persistence.** `LIFE_OS_LOCAL_ONLY=true` forces Supabase off even if old env keys exist.
 
 ## Architecture
 
-```
-Next.js app (pages + API routes)
-        │
-        ├── /career, /money, /decisions, /routines, … (UI)
-        │
-        ├── /api/jobs/pipeline  → runFullPipeline()
-        │     fetch → dedupe → enrich (AI) → rank
-        │
-        ├── /api/ai/{parse-job, evaluate-job, chat, …}
-        │     → callAI() → Gemini / Ollama / OpenAI-compat
-        │
-        └── storage layer
-              ├── Supabase (primary) — profiles, jobs, raw_jobs,
-              │                       worker_state, storage_kv, …
-              └── data/*.json (fallback on laptop / /tmp on Cloud Run)
+```text
+Next.js app
+  - UI pages and API routes
+  - /api/jobs/pipeline -> runFullPipeline()
+  - /api/ai/parse-job and /api/ai/evaluate-job -> python-ai sidecar
+  - other /api/ai/* routes -> local Ollama client
+  - storage -> data/*.json
 
-scripts/worker.mjs — standalone Node worker that POSTs to the app's
-                     own /api/worker/* endpoints
+python-ai FastAPI sidecar
+  - GET /health
+  - POST /parse-job
+  - POST /evaluate-job
+  - LLM_URL=http://127.0.0.1:11434/v1
 ```
 
 Key files:
 
-- [src/app/career/page.tsx](src/app/career/page.tsx) + [src/features/career/career-dashboard.tsx](src/features/career/career-dashboard.tsx) — flagship UI
-- [src/lib/jobs/pipeline/](src/lib/jobs/pipeline/) — `runFullPipeline`, `deduplicateJobs`, `enrichJobs`, `rankJobs`, `evaluate*Relevance`
-- [src/lib/jobs/sources/](src/lib/jobs/sources/) — one adapter per source, all implementing `JobSourceAdapter`
-- [src/lib/ai/client.ts](src/lib/ai/client.ts) — unified `callAI` with Gemini/Ollama/OpenAI/Anthropic compat
-- [src/lib/ai/tasks/](src/lib/ai/tasks/) — one file per AI task (prompt + schema + fallback)
-- [src/lib/storage/index.ts](src/lib/storage/index.ts) — Supabase-first, disk-fallback façade
-- [supabase/migrations/](supabase/migrations/) — schema (profiles, jobs, raw_jobs, storage_kv, …)
+- [src/features/career/career-dashboard.tsx](src/features/career/career-dashboard.tsx) - flagship career UI
+- [src/lib/jobs/pipeline/](src/lib/jobs/pipeline/) - fetch, dedupe, enrich, rank
+- [src/lib/jobs/sources/](src/lib/jobs/sources/) - one adapter per job source
+- [src/lib/ai/client.ts](src/lib/ai/client.ts) - local Ollama AI client
+- [python-ai/](python-ai/) - local Python AI sidecar
+- [src/lib/storage/index.ts](src/lib/storage/index.ts) - local JSON storage facade
 
-## Getting started (local)
+## Getting Started
 
-1. **Prereqs:** Node 20+, a Supabase project.
-2. **Clone + install:**
+1. Install Node 20+, Python 3.11+, and Ollama.
+2. Install dependencies:
+
    ```bash
-   git clone https://github.com/mohamed9546/Life-os.git
-   cd Life-os
    npm install
+   cd python-ai
+   python -m venv .venv
+   .venv/Scripts/python.exe -m pip install -e ".[dev]"
+   cd ..
    ```
-3. **Env setup:** copy `deploy/env.example` to `.env.local` and fill in:
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
-   SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
-   GEMINI_API_KEY=...
 
-   # Must be a real UUID from auth.users that owns your data:
-   LIFE_OS_DEFAULT_USER_ID=<your-auth-user-id>
-   LIFE_OS_DEFAULT_USER_EMAIL=<your-email>
+3. Copy `.env.local.template` to `.env.local` and keep the local defaults:
 
-   # Optional source API keys:
-   ADZUNA_APP_ID=
-   ADZUNA_APP_KEY=
-   REED_API_KEY=
-   THEMUSE_API_KEY=
-   JOOBLE_API_KEY=
-   FINDWORK_API_KEY=
-   SERP_API_KEY=
-   APOLLO_API_KEY=
+   ```env
+   LIFE_OS_LOCAL_ONLY=true
+   OLLAMA_BASE_URL=http://127.0.0.1:11434
+   OLLAMA_MODEL=qwen3.5:2b
+   USE_PYTHON_AI=true
+   PYTHON_AI_URL=http://127.0.0.1:8800
+   LLM_URL=http://127.0.0.1:11434/v1
+   LLM_MODEL=qwen3.5:2b
    ```
-4. **Apply migrations** against your Supabase:
+
+4. Pull the local model:
+
    ```bash
-   # via Supabase CLI (recommended)
-   supabase db push
-
-   # or paste each file from supabase/migrations/ into the SQL editor
+   ollama pull qwen3.5:2b
    ```
-5. **Run:**
+
+5. Start and verify the local stack:
+
    ```bash
-   npm run dev
-   # in another shell:
-   npm run worker:once   # single background-task pass (optional)
+   npm run local:start
+   npm run local:doctor
    ```
-6. Open http://localhost:3000/career. Click **Run Pipeline**. You
-   should see `~100–400` jobs fetched, de-duped, ranked within ~1 min
-   per enabled source.
 
-## Deployment (Debian VM / GCE e2-medium)
-
-```bash
-# On a fresh VM:
-curl -fsSL https://raw.githubusercontent.com/mohamed9546/Life-os/main/deploy/setup-vm.sh | bash
-
-# Then edit /opt/life-os/env with real values (including
-# LIFE_OS_DEFAULT_USER_ID) and:
-sudo systemctl restart life-os
-sudo journalctl -u life-os -f
-```
-
-The app listens on `127.0.0.1:8080`. Front with Caddy, nginx, or a
-Cloudflare tunnel — see [deploy/cloudflared.example.yml](deploy/cloudflared.example.yml).
+6. Open http://127.0.0.1:3000/settings or http://127.0.0.1:3000/career.
 
 ## Scripts
 
 | Script | What it does |
 |---|---|
-| `npm run dev` | Next.js dev server on :3000 |
-| `npm run build` | Production build |
-| `npm run start` | Production server |
+| `npm run local:start` | Starts Ollama checks, Python sidecar on `:8800`, and Next.js on `:3000` |
+| `npm run local:doctor` | Checks Ollama, sidecar, Settings API, AI health, parse-job, and evaluate-job |
+| `npm run dev` | Next.js dev server |
 | `npm run worker` | Continuous background worker |
 | `npm run worker:once` | Single worker pass |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint |
-| `node scripts/migrate-local-to-supabase.ts` | Seed Supabase from local JSON |
+| `npm run typecheck` | TypeScript check |
 
-## Verification
+## Data
 
-A line-by-line verification plan lives in
-[verification-plan/](verification-plan/) — 5 chunks, one per subsystem.
-Recommended order: Career+AI → Jobs pipeline → Storage/auth → other
-Life OS surfaces → Worker/deploy.
-
-## Recent fixes
-
-- **Cloud persistence end-to-end** (2026-04-24): pipeline + worker now
-  write as the real Supabase auth UUID (via `LIFE_OS_DEFAULT_USER_ID`)
-  instead of a placeholder string, so FK-guarded writes to
-  `raw_jobs` / `jobs` actually succeed.
-- **Missing AI task types** (2026-04-24): added 7 task types
-  (`cover-letter`, `cv-optimize`, `interview-prep`, `salary-lookup`,
-  `skill-gap`, `extract-job-from-scrape`, `extract-job-list-from-scrape`)
-  that several routes were passing to `callAI()` — the lookup was
-  returning `undefined` and crashing `getTaskRuntimeSettings`.
-- **Pipeline returning zero jobs** (2026-04-24): `searchesToQueries`
-  used to pass `["phrase a", "phrase b", …]` as one combined query to
-  every adapter. Adzuna/Reed/etc. treat `what` as AND-joined, so
-  nothing matched. Now one query per phrase, de-duped at the pipeline
-  level.
-
-## License
-
-Private project. No license granted.
+`data/*.json` is the local source of truth. Back it up before destructive changes. Backups created by local migration work live under `backups/` and are intentionally ignored by git.

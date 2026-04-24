@@ -10,6 +10,8 @@
     "lint": "next lint",
     "worker": "node scripts/worker.mjs",
     "worker:once": "node scripts/worker.mjs --once",
+    "local:start": "powershell -ExecutionPolicy Bypass -File scripts/local-start.ps1",
+    "local:doctor": "powershell -ExecutionPolicy Bypass -File scripts/local-doctor.ps1",
     "export:workspace": "node scripts/export-workspace-json.mjs",
     "pretypecheck": "node scripts/clean-next-artifacts.mjs --types",
     "typecheck": "tsc --noEmit"

@@ -342,8 +342,10 @@ async function callRuntime(
   switch (config.compatibilityMode) {
     case "ollama": {
       const rawOutput =
-        typeof payload.response === "string"
+        typeof payload.response === "string" && payload.response.length > 0
           ? payload.response
+          : typeof payload.thinking === "string"
+          ? payload.thinking
           : JSON.stringify(payload);
       if (rawText) {
         return { parsed: rawOutput, rawOutput, durationMs, model: payload.model || model, jsonExtractionFallback: false };
