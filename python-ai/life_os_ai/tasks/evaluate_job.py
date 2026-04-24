@@ -1,0 +1,380 @@
+"""Evaluate job fit against the candidate profile.
+
+Mirrors `src/lib/ai/tasks/evaluate-job.ts`. Same system prompt, same
+scoring rubric, same heuristic fallback when the AI is rate-limited or
+returns invalid data.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import time
+from datetime import UTC, datetime
+from typing import Any
+
+from pydantic import ValidationError
+
+from ..llm import chat
+from ..profile import CandidateProfile, build_profile_prompt_block
+from ..schemas import AIMetadata, JobFitEvaluation, ParsedJobPosting
+
+log = logging.getLogger(__name__)
+
+
+SYSTEM_PROMPT = (
+    "You are a career strategy AI specialising in entry-level UK life sciences, clinical "
+    "operations, QA, regulatory, pharmacovigilance, and medical information transitions.\n"
+    "Treat the candidate as entry/support-level, not senior. They have MSc Clinical "
+    "Pharmacology, GCP training, clinical research internship exposure, regulated "
+    "healthcare documentation experience, SOP/compliance-heavy workflow exposure, and "
+    "governance/controlled-document exposure.\n"
+    "Strong-fit work includes regulated documentation, clinical trial support, study "
+    "coordination, SOP/compliance-heavy admin, healthcare administration, research "
+    "governance, and regulated support functions.\n"
+    "Primary target titles: Clinical Trial Assistant, Clinical Research Coordinator, "
+    "Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, "
+    "Study Start-Up Assistant/Coordinator, Site Activation Assistant/Coordinator, Trial "
+    "Administrator, Clinical Project Assistant, In-House CRA, and Junior CRA only if "
+    "clearly junior/entry-level.\n"
+    "Secondary target titles: QA Associate, Quality Systems Associate, Document Control "
+    "Associate, Regulatory Affairs Assistant, Regulatory Operations Assistant, "
+    "Pharmacovigilance Associate, Drug Safety Associate, Medical Information Associate, "
+    "Research Governance, and Research Support.\n"
+    "Severely penalise tax/accounting/payroll/finance operations, legal assistant roles, "
+    "wet-lab execution, field sales/territory roles, GPhC-essential roles, "
+    "community-pharmacy-only roles, and senior/leadership roles.\n"
+    "Always respond with valid JSON matching the exact schema requested.\n"
+    "Be realistic and strategic -- never flattering. This candidate has transferable skills "
+    "but needs stepping-stone roles, not stretch goals."
+)
+
+
+def _build_prompt(job: ParsedJobPosting, profile_block: str) -> str:
+    must_haves = ", ".join(job.must_haves) if job.must_haves else "None listed"
+    nice_to_haves = ", ".join(job.nice_to_haves) if job.nice_to_haves else "None listed"
+    red_flags = ", ".join(job.red_flags) if job.red_flags else "None"
+
+    return f"""\
+Evaluate the following job against the user profile below and return a JSON object.
+
+{profile_block}
+
+JOB TO EVALUATE:
+Title: {job.title}
+Company: {job.company}
+Location: {job.location}
+Salary: {job.salary_text or "Not specified"}
+Employment Type: {job.employment_type}
+Seniority: {job.seniority}
+Remote Type: {job.remote_type}
+Role Family: {job.role_family}
+Role Track: {job.role_track}
+Must Haves: {must_haves}
+Nice to Haves: {nice_to_haves}
+Red Flags: {red_flags}
+Summary: {job.summary}
+
+Return exactly this JSON structure:
+{{
+  "fitScore": 0-100,
+  "redFlagScore": 0-100,
+  "priorityBand": "high | medium | low | reject",
+  "whyMatched": ["reasons this job is a good fit"],
+  "whyNot": ["reasons this job is not ideal"],
+  "strategicValue": "string explaining strategic career value",
+  "likelyInterviewability": "string assessing chances of getting an interview",
+  "actionRecommendation": "apply now | apply if time | skip",
+  "visaRisk": "green | amber | red",
+  "confidence": 0.0 to 1.0
+}}
+
+VISA RISK LOGIC:
+- green: No explicit anti-visa wording, no permanent-right-to-work restriction
+- amber: "no sponsorship available", "must already have right to work", ambiguous
+- red: "cannot hire visa holders", "must have permanent right to work",
+       "no candidates on visas", "must not require sponsorship now or in future"
+
+ACTION RECOMMENDATION LOGIC:
+- apply now = strong fit, manageable risk, strategically valuable
+- apply if time = medium fit or amber constraints
+- skip = weak fit, irrelevant family, or strong visa/seniority mismatch
+
+SCORING GUIDE:
+- fitScore 70-100: Strong match for CTA, clinical operations, QA, regulatory, PV, or medinfo
+- fitScore 40-69: Moderate match, worth considering if interviewability and strategic value credible
+- fitScore 20-39: Weak match, only if nothing better
+- fitScore 0-19: Poor match, likely reject
+
+- redFlagScore 0-20: Few concerns
+- redFlagScore 21-50: Some concerns worth noting
+- redFlagScore 51-100: Significant red flags
+
+SCORING RULES -- REWARDS (apply to fitScore):
+- Primary target role (CTA, Clinical Research Coordinator, Clinical Operations Assistant /
+  Coordinator, Study Start-Up, Site Activation, Trial Administrator, Clinical Project
+  Assistant, In-House CRA, or clearly junior CRA): +25
+- Secondary target role (QA Associate, Quality Systems Associate, Document Control,
+  Regulatory Affairs / Operations Assistant, Pharmacovigilance / Drug Safety Associate,
+  Medical Information Associate, Research Governance, or Research Support): +18
+- Role explicitly values ICH-GCP, GCP, TMF/eTMF, ISF, essential documents, CTMS, SOP,
+  protocol compliance, submissions support, filing/archiving, audit readiness, governance,
+  or clinical documentation: +15
+- Entry/junior/assistant/coordinator/support/administrator seniority that does not
+  require prior industry experience: +12
+- Glasgow, Scotland, UK remote/hybrid, or strong London hybrid fit: +5
+
+SCORING RULES -- PENALTIES (apply to fitScore and redFlagScore):
+- Role is Community Pharmacy Manager, Locum Pharmacist, Retail Pharmacy, Dispensary
+  Manager, or any pharmacy retail role: fitScore -40, redFlagScore +30
+- Role title or description involves Tax, Accountant, Chartered Tax Advisor, Finance,
+  Audit, or CTA in a financial context: fitScore -50, redFlagScore +40 (hard reject)
+- Role is lab-heavy bench scientist, molecular biologist, or requires active wet-lab
+  work unrelated to oversight: fitScore -25, redFlagScore +20
+- Role requires more than 5 years of industry experience: fitScore -20
+- Senior/Director/VP with mandatory line management, extensive travel, or strong visa
+  barriers: fitScore -15, redFlagScore +15
+- Field sales, territory manager, business development representative, legal assistant,
+  insurance, claims handler, veterinary, dental sales, or GPhC-registration-essential
+  roles: fitScore -50, redFlagScore +40
+- Ireland-relevant roles can be flagged but should not rank above strong UK / Scotland /
+  London-hybrid matches unless explicitly requested.
+
+Priority bands:
+- high: fitScore >= 65 AND redFlagScore < 40
+- medium: fitScore >= 40 AND redFlagScore < 60
+- low: fitScore >= 20 AND redFlagScore < 70
+- reject: everything else
+
+Respond with ONLY the JSON object."""
+
+
+# ---------------------------------------------------------------------------
+# Heuristic fallback -- mirrors buildHeuristicFallback in the TS version.
+# ---------------------------------------------------------------------------
+
+_TRACK_BASE_SCORES = {
+    "qa": 65,
+    "regulatory": 70,
+    "pv": 68,
+    "clinical": 72,
+    "medinfo": 65,
+    "other": 22,
+}
+
+_TRACK_LABELS = {
+    "qa": "QA/GMP",
+    "regulatory": "Regulatory Affairs",
+    "pv": "Pharmacovigilance",
+    "clinical": "Clinical Operations",
+    "medinfo": "Medical Information",
+    "other": "Other",
+}
+
+
+def _heuristic_evaluation(job: ParsedJobPosting) -> JobFitEvaluation:
+    track = job.role_track or "other"
+    title = (job.title or "").lower()
+    seniority = (job.seniority or "").lower()
+    red_flags = job.red_flags or []
+
+    fit_score = _TRACK_BASE_SCORES.get(track, 22)
+
+    # Seniority adjustment
+    if re.search(r"director|vp\b|vice president|head of", seniority):
+        fit_score -= 20
+    elif re.search(r"senior|manager", seniority):
+        fit_score -= 10
+    elif re.search(r"assistant|associate|coordinator|junior", seniority):
+        fit_score += 8
+
+    # Title bonuses for entry-level transition roles
+    if re.search(r"\b(assistant|associate|coordinator|support|officer)\b", title):
+        fit_score += 5
+
+    # Penalise clearly off-track roles
+    if track == "other" and re.search(r"\b(tax|accountant|software|developer|engineer|scientist|bench)\b", title):
+        fit_score -= 15
+
+    red_flag_score = min(100, len(red_flags) * 10)
+    if re.search(r"director|vp\b", seniority):
+        red_flag_score += 15
+    if any(re.search(r"visa|sponsor", m, re.IGNORECASE) for m in job.must_haves):
+        red_flag_score += 20
+    red_flag_score = min(100, red_flag_score)
+
+    fit_score = max(0, min(100, fit_score))
+
+    if fit_score >= 65 and red_flag_score < 40:
+        priority_band = "high"
+    elif fit_score >= 40 and red_flag_score < 60:
+        priority_band = "medium"
+    elif fit_score >= 20 and red_flag_score < 70:
+        priority_band = "low"
+    else:
+        priority_band = "reject"
+
+    track_label = _TRACK_LABELS.get(track, track)
+    in_target = track != "other"
+
+    why_matched = [f"{track_label} track aligns with transition targets (heuristic)"] if in_target else []
+    if not in_target:
+        why_not = ["Role track is outside primary transition targets (heuristic)"]
+    elif red_flag_score > 30:
+        why_not = ["Some red flags detected -- review before applying"]
+    else:
+        why_not = []
+
+    strategic_value = (
+        f"{track_label} experience builds toward career transition goals"
+        if in_target
+        else "Limited strategic value for current transition targets"
+    )
+
+    if fit_score >= 65:
+        interviewability = "Good -- profile-role alignment looks strong"
+    elif fit_score >= 40:
+        interviewability = "Moderate -- some alignment, review gaps"
+    else:
+        interviewability = "Low -- significant gap between profile and role"
+
+    if priority_band == "high":
+        action: str = "apply now"
+    elif priority_band == "medium":
+        action = "apply if time"
+    else:
+        action = "skip"
+
+    if red_flag_score > 40:
+        visa_risk = "red"
+    elif red_flag_score > 20:
+        visa_risk = "amber"
+    else:
+        visa_risk = "green"
+
+    return JobFitEvaluation.model_validate(
+        {
+            "fitScore": fit_score,
+            "redFlagScore": red_flag_score,
+            "priorityBand": priority_band,
+            "whyMatched": why_matched,
+            "whyNot": why_not,
+            "strategicValue": strategic_value,
+            "likelyInterviewability": interviewability,
+            "actionRecommendation": action,
+            "visaRisk": visa_risk,
+            "confidence": 0.3,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# JSON extraction (same helper as parse_job but duplicated to keep the
+# two task files decoupled -- they'll evolve independently).
+# ---------------------------------------------------------------------------
+
+
+def _extract_json(raw: str) -> dict[str, Any] | None:
+    text = raw.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        log.debug("direct json.loads failed: %s (text len=%d)", exc, len(text))
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if fence:
+        try:
+            return json.loads(fence.group(1))
+        except json.JSONDecodeError as exc:
+            log.debug("fenced json.loads failed: %s", exc)
+    obj = re.search(r"\{[\s\S]*\}", text)
+    if obj:
+        try:
+            return json.loads(obj.group(0))
+        except json.JSONDecodeError as exc:
+            log.debug("braced json.loads failed: %s", exc)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def evaluate_job(
+    job: ParsedJobPosting,
+    profile: CandidateProfile,
+) -> tuple[JobFitEvaluation, AIMetadata]:
+    """Evaluate fit. Always returns a usable result -- heuristic fallback
+    kicks in when the LLM fails or returns invalid data."""
+    started = time.time()
+    profile_block = build_profile_prompt_block(profile)
+    input_bytes = len(profile_block.encode("utf-8")) + len(job.model_dump_json().encode("utf-8"))
+
+    result = chat(
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _build_prompt(job, profile_block)},
+        ],
+        temperature=0.1,
+        # 2048 tokens gives verbose evaluations enough room while provider
+        # truncation is handled by the LLM client before JSON parsing here.
+        max_tokens=2048,
+        response_format="json",
+    )
+
+    duration_ms = int((time.time() - started) * 1000)
+
+    def _fallback(kind: str) -> tuple[JobFitEvaluation, AIMetadata]:
+        evaluation = _heuristic_evaluation(job)
+        meta = AIMetadata.model_validate(
+            {
+                "model": "heuristic",
+                "promptType": "evaluate-job",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "confidence": evaluation.confidence,
+                "durationMs": duration_ms,
+                "inputBytes": input_bytes,
+                "outputBytes": len(evaluation.model_dump_json().encode("utf-8")),
+                "fallbackUsed": True,
+                "fallbackAttempted": result.fallback_used,
+                "attemptCount": 1,
+                "effectiveTimeoutMs": 0,
+                "jsonExtractionFallback": False,
+                "failureKind": kind,
+            }
+        )
+        return evaluation, meta
+
+    if not result.success or result.text is None:
+        log.warning("evaluate-job LLM failed (%s) -- using heuristic fallback", result.failure_kind)
+        return _fallback(result.failure_kind or "runtime_error")
+
+    data = _extract_json(result.text)
+    if data is None:
+        log.warning("evaluate-job: couldn't extract JSON; using heuristic fallback")
+        return _fallback("invalid_json")
+
+    try:
+        evaluation = JobFitEvaluation.model_validate(data)
+    except ValidationError as exc:
+        log.warning("evaluate-job: schema validation failed (%s) -- heuristic fallback", exc)
+        return _fallback("schema_validation")
+
+    meta = AIMetadata.model_validate(
+        {
+            "model": result.model or "unknown",
+            "promptType": "evaluate-job",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "confidence": evaluation.confidence,
+            "durationMs": result.duration_ms,
+            "inputBytes": input_bytes,
+            "outputBytes": len(result.text.encode("utf-8")),
+            "fallbackUsed": result.fallback_used,
+            "fallbackAttempted": result.fallback_used,
+            "attemptCount": 1,
+            "effectiveTimeoutMs": 0,
+            "jsonExtractionFallback": False,
+        }
+    )
+    return evaluation, meta

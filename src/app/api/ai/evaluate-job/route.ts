@@ -6,6 +6,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { evaluateJobFit } from "@/lib/ai/tasks/evaluate-job";
 import { ParsedJobPostingSchema } from "@/lib/ai/schemas";
+import { callPythonAI, isPythonAIEnabled } from "@/lib/ai/python-sidecar";
+import type { AIMetadata, JobFitEvaluation, ParsedJobPosting } from "@/types";
+
+interface SidecarResponse {
+  success: boolean;
+  data?: JobFitEvaluation;
+  meta?: AIMetadata;
+  error?: string;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,6 +37,36 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Proxy to Python sidecar when the feature flag is on; fall back to
+    // the TS implementation if the sidecar is unreachable or returns an
+    // error so a broken sidecar never blocks the main app.
+    if (isPythonAIEnabled()) {
+      try {
+        const result = await callPythonAI<
+          { job: ParsedJobPosting },
+          SidecarResponse
+        >("/evaluate-job", { job: validation.data });
+
+        if (result.success && result.data) {
+          return NextResponse.json({
+            success: true,
+            data: result.data,
+            meta: result.meta,
+          });
+        }
+
+        console.warn(
+          "[api/ai/evaluate-job] Python sidecar returned failure, falling back to TS:",
+          result.error
+        );
+      } catch (err) {
+        console.warn(
+          "[api/ai/evaluate-job] Python sidecar call failed, falling back to TS:",
+          err instanceof Error ? err.message : err
+        );
+      }
     }
 
     const result = await evaluateJobFit(validation.data);
