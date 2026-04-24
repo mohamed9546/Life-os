@@ -1,6 +1,7 @@
 # Chunk 3 — Storage + auth + Supabase plumbing
 
-**Status:** not started
+**Status:** walked-through 2026-04-24 (2 real fixes landed; 3 open
+items — one needs a schema decision, two are production notes)
 
 **Scope:** Everything that decides *where* data lives: the `storage`
 façade, the Supabase clients, the auth session, middleware, and the
@@ -50,6 +51,43 @@ For each migration, confirm:
 - [ ] `types/index.ts` `EnrichedJob`, `RawJobItem`, `JobFitEvaluation` — still match SQL columns?
 
 ---
+
+## Issues found (2026-04-24 walk-through)
+
+### Fixed this pass
+
+1. **`appendToCollection` race condition.** Every call did
+   `readCollection → push → writeCollection` against a single
+   `storage_kv` JSONB row. Concurrent callers (the pipeline firing
+   multiple AI log entries during parallel enrichment) read the same
+   pre-state, pushed their entry, and raced the write — last write
+   wins, entries lost. Added a per-collection in-process promise
+   chain so appends serialize. Edit:
+   [src/lib/storage/index.ts](../src/lib/storage/index.ts).
+2. **Silent data loss on Cloud Run when Supabase not configured.**
+   The storage façade fell back to `/tmp/data` — a per-instance
+   tmpfs that's wiped on every container restart — with no warning.
+   Now emits a one-time loud console.error on the first fallback so
+   misconfigured deployments surface immediately.
+   Same edit as above.
+
+### Open / noted
+
+3. **`getActiveAdapters` doesn't consult user's `enabled` preference.**
+   (Cross-reference to Chunk 2 finding — storage layer is fine, but
+   surfaces here because `source_configs` is the kv record that
+   should be the source of truth.)
+4. **RLS bypass via service role key is the only write path.** Every
+   server-side write uses `SUPABASE_SERVICE_ROLE_KEY` and bypasses
+   RLS. If multi-tenancy ever arrives, the code needs to also
+   enforce `user_id` correctness in every handler (not just trust
+   the policies). Currently acceptable for a single-tenant personal
+   OS.
+5. **Cloud Run env is now populated** (verified live at
+   https://life-os-856213759835.europe-west1.run.app/api/jobs/stats
+   which returns the same numbers as Supabase). Keep
+   `SUPABASE_SERVICE_ROLE_KEY` out of revisions history — consider
+   rotating it into Google Secret Manager via `--update-secrets`.
 
 ## Known architectural issues (decide here)
 

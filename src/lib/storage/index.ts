@@ -21,13 +21,16 @@ function getSupabase() {
 const PRIMARY_DATA_DIR = path.join(process.cwd(), "data");
 const FALLBACK_DATA_DIR = "/tmp/data";
 let resolvedDataDir: string | null = null;
+let warnedAboutEphemeralFallback = false;
+
+function isCloudRunEnvironment(): boolean {
+  return !!process.env.K_SERVICE || !!process.env.GOOGLE_CLOUD_PROJECT;
+}
 
 async function getDataDir(): Promise<string> {
   if (resolvedDataDir) return resolvedDataDir;
 
-  const isCloudRun = !!process.env.K_SERVICE || !!process.env.GOOGLE_CLOUD_PROJECT;
-
-  if (isCloudRun) {
+  if (isCloudRunEnvironment()) {
     try {
       await fs.mkdir(FALLBACK_DATA_DIR, { recursive: true });
     } catch {
@@ -44,6 +47,21 @@ async function getDataDir(): Promise<string> {
   }
 
   return resolvedDataDir;
+}
+
+// Fires the first time we fall back to ephemeral /tmp on Cloud Run without
+// Supabase. Without this the app silently writes to a per-instance tmpfs
+// that's wiped on every deploy and container restart — looks fine in dev,
+// then the phone sees "nothing happened" after each redeploy.
+function warnEphemeralFallbackOnce(reason: string): void {
+  if (!isCloudRunEnvironment()) return;
+  if (warnedAboutEphemeralFallback) return;
+  warnedAboutEphemeralFallback = true;
+  console.error(
+    `[storage] WARNING: Cloud Run detected but Supabase is not usable (${reason}). ` +
+      `Writes will go to /tmp/data and be LOST on every container restart. ` +
+      `Set NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY on the service.`
+  );
 }
 
 async function ensureDataDir(): Promise<void> {
@@ -78,6 +96,8 @@ export async function readCollection<T>(collection: string): Promise<T[]> {
       console.error(`[storage] Error reading collection ${collection} from Supabase:`, err);
       // Fallback to disk on error
     }
+  } else {
+    warnEphemeralFallbackOnce("getSupabase() returned null");
   }
 
   await ensureDataDir();
@@ -114,6 +134,8 @@ export async function writeCollection<T>(
       console.error(`[storage] Error writing collection ${collection} to Supabase:`, err);
       // Fallback to disk on error
     }
+  } else {
+    warnEphemeralFallbackOnce("getSupabase() returned null");
   }
 
   await ensureDataDir();
@@ -125,16 +147,35 @@ export async function writeCollection<T>(
   }
 }
 
+// Per-collection lock chain. `appendToCollection` is read-modify-write
+// against a single JSONB row, so concurrent callers (e.g. the pipeline
+// firing multiple AI log entries while enriching in parallel) race and
+// lose entries. Serializing per collection inside a single process is
+// cheap and correct for the in-process case (the worker is a separate
+// process but doesn't touch ai-log directly).
+const appendLocks = new Map<string, Promise<unknown>>();
+
 /**
- * Append items to a collection.
+ * Append items to a collection. Serialized per-collection within this
+ * process so concurrent appends don't stomp on each other.
  */
 export async function appendToCollection<T>(
   collection: string,
   items: T[]
 ): Promise<void> {
-  const existing = await readCollection<T>(collection);
-  existing.push(...items);
-  await writeCollection(collection, existing);
+  const prev = appendLocks.get(collection) ?? Promise.resolve();
+  const next = prev.then(async () => {
+    const existing = await readCollection<T>(collection);
+    existing.push(...items);
+    await writeCollection(collection, existing);
+  });
+  // Swallow errors in the lock chain so one failure doesn't poison later
+  // appends — the actual error still propagates to the caller below.
+  appendLocks.set(
+    collection,
+    next.catch(() => undefined)
+  );
+  return next;
 }
 
 /**
@@ -159,6 +200,8 @@ export async function readObject<T>(name: string): Promise<T | null> {
       console.error(`[storage] Error reading object ${name} from Supabase:`, err);
       // Fallback to disk on error
     }
+  } else {
+    warnEphemeralFallbackOnce("getSupabase() returned null");
   }
 
   await ensureDataDir();
@@ -191,6 +234,8 @@ export async function writeObject<T>(name: string, data: T): Promise<void> {
       console.error(`[storage] Error writing object ${name} to Supabase:`, err);
       // Fallback to disk on error
     }
+  } else {
+    warnEphemeralFallbackOnce("getSupabase() returned null");
   }
 
   await ensureDataDir();
