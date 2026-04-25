@@ -1,9 +1,13 @@
 "use client";
 
-import { PriorityBand } from "@/types";
+import {
+  DEFAULT_VISIBLE_ROLE_TRACKS,
+  getRoleTrackLabel,
+} from "@/lib/career/role-track-labels";
 import { getContactFreshness, hasOutreachDraft } from "@/lib/jobs/selectors";
 
 export interface JobFilters {
+  query: string;
   source: string;
   roleTrack: string;
   remoteType: string;
@@ -14,6 +18,7 @@ export interface JobFilters {
 }
 
 export const DEFAULT_FILTERS: JobFilters = {
+  query: "",
   source: "all",
   roleTrack: "all",
   remoteType: "all",
@@ -27,6 +32,7 @@ interface FilterBarProps {
   filters: JobFilters;
   onChange: (filters: JobFilters) => void;
   availableSources: string[];
+  availableRoleTracks: string[];
   jobCount: number;
   totalCount: number;
 }
@@ -35,6 +41,7 @@ export function FilterBar({
   filters,
   onChange,
   availableSources,
+  availableRoleTracks,
   jobCount,
   totalCount,
 }: FilterBarProps) {
@@ -43,6 +50,7 @@ export function FilterBar({
   };
 
   const hasFilters =
+    filters.query.trim().length > 0 ||
     filters.source !== "all" ||
     filters.roleTrack !== "all" ||
     filters.remoteType !== "all" ||
@@ -53,6 +61,13 @@ export function FilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-[24px] border border-slate-200 bg-white px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <input
+        className="input min-w-[14rem] flex-1 text-xs"
+        value={filters.query}
+        onChange={(e) => update({ query: e.target.value })}
+        placeholder="Search title, company, location"
+      />
+
       <select
         className="input w-36 text-xs"
         value={filters.source}
@@ -72,12 +87,14 @@ export function FilterBar({
         onChange={(e) => update({ roleTrack: e.target.value })}
       >
         <option value="all">All Tracks</option>
-        <option value="qa">QA</option>
-        <option value="regulatory">Regulatory</option>
-        <option value="pv">Pharmacovigilance</option>
-        <option value="medinfo">Medical Info</option>
-        <option value="clinical">Clinical</option>
-        <option value="other">Other</option>
+        {(availableRoleTracks.length > 0
+          ? availableRoleTracks
+          : [...DEFAULT_VISIBLE_ROLE_TRACKS]
+        ).map((track) => (
+          <option key={track} value={track}>
+            {getRoleTrackLabel(track)}
+          </option>
+        ))}
       </select>
 
       <select
@@ -169,6 +186,23 @@ export function applyFilters(
   filters: JobFilters
 ): import("@/types").EnrichedJob[] {
   return jobs.filter((job) => {
+    if (filters.query.trim()) {
+      const parsed = job.parsed?.data;
+      const haystack = [
+        parsed?.title,
+        job.raw.title,
+        parsed?.company,
+        job.raw.company,
+        parsed?.location,
+        job.raw.location,
+        parsed?.summary,
+        job.raw.source,
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .toLowerCase();
+      if (!haystack.includes(filters.query.trim().toLowerCase())) return false;
+    }
     if (filters.source !== "all" && job.raw.source !== filters.source)
       return false;
     if (

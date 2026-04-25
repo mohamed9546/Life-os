@@ -10,6 +10,7 @@ import {
   JobFitEvaluation,
   AIResult,
 } from "@/types";
+import { getRoleTrackLabel } from "@/lib/career/role-track-labels";
 import { callAI } from "../client";
 import { JobFitEvaluationSchema, validateAIOutput } from "../schemas";
 import { loadUserProfilePromptBlock } from "../user-profile";
@@ -115,11 +116,6 @@ const TRACK_BASE_SCORES: Record<string, number> = {
   qa: 65, regulatory: 70, pv: 20, clinical: 72, medinfo: 65, other: 22,
 };
 
-const TRACK_LABELS: Record<string, string> = {
-  qa: "QA/GMP", regulatory: "Regulatory Affairs", pv: "Pharmacovigilance",
-  clinical: "Clinical Operations", medinfo: "Medical Information", other: "Other",
-};
-
 function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
   const relevance = evaluateRawJobRelevance({
     source: "parsed",
@@ -177,7 +173,16 @@ function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
   else if (fitScore >= 20 && redFlagScore < 70) priorityBand = "low";
   else priorityBand = "reject";
 
-  const trackLabel = TRACK_LABELS[track] ?? track;
+  const trackLabel =
+    track === "qa"
+      ? "QA/GMP"
+      : track === "regulatory"
+        ? "Regulatory Affairs"
+        : track === "clinical"
+          ? "Clinical Operations"
+          : track === "medinfo"
+            ? "Medical Information"
+            : getRoleTrackLabel(track);
   const inTarget = track !== "other";
 
   return {

@@ -273,7 +273,7 @@ function evaluateTextRelevance(text: string): RelevanceGateResult {
 
   if (roleFamily === "pv") {
     penalty += 20;
-    reasons.push("PV roles are no longer a preferred target path.");
+    reasons.push("Drug safety roles are no longer a preferred target path.");
   }
 
   bonus += Math.min(positiveMatches.length * 5, 35);

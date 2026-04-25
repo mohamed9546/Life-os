@@ -34,6 +34,7 @@ import {
   FailureState,
   FilterBar as SysFilterBar,
 } from "@/components/ui/system";
+import { getRoleTrackLabel } from "@/lib/career/role-track-labels";
 import { cn } from "@/lib/utils";
 
 // ---- Types ----
@@ -56,14 +57,6 @@ const STAGE_DOT: Record<string, string> = {
   offer:       "bg-emerald-400",
   rejected:    "bg-rose-400",
   archived:    "bg-slate-600",
-};
-
-const TRACK_LABELS: Record<string, string> = {
-  clinical:   "Clinical",
-  regulatory: "Regulatory",
-  qa:         "QA",
-  pv:         "PV",
-  medinfo:    "MedInfo",
 };
 
 // ---- Main component ----
@@ -300,7 +293,7 @@ function CareerHero({
             Career Pipeline Manager
           </h1>
           <p className="mt-2 text-sm leading-7 text-slate-400 max-w-lg">
-            Paste, rank, evaluate, and act on opportunities across PV, QA, Regulatory, Clinical, and MedInfo lanes.
+            Paste, rank, evaluate, and act on CTA/CRA support, QA, Regulatory, Clinical, and Medical Information roles.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <StatusChip tone={jobs.sources.filter((s) => s.active).length > 0 ? "success" : "warning"}>
@@ -861,7 +854,7 @@ function AnalystSection({ onJobSaved }: { onJobSaved: () => void }) {
 
             <div className="grid grid-cols-2 gap-3 mb-4">
               {[
-                ["Track",   TRACK_LABELS[parsed.roleTrack] || parsed.roleTrack],
+                ["Track", getRoleTrackLabel(parsed.roleTrack)],
                 ["Remote",  parsed.remoteType],
                 ["Type",    parsed.employmentType],
                 ["Level",   parsed.seniority],
@@ -975,9 +968,6 @@ function InboxSection({
   onSelect: (j: EnrichedJob | null) => void;
 }) {
   const [filters, setFilters] = useState<JobFilters>(DEFAULT_FILTERS);
-  const [minFit, setMinFit] = useState(0);
-  const [remoteOnly, setRemoteOnly] = useState(false);
-  const [priorityFilter, setPriorityFilter] = useState<string>("all");
 
   const sorted = useMemo(
     () =>
@@ -987,13 +977,18 @@ function InboxSection({
     [jobs.ranked]
   );
 
-  const filtered = useMemo(() => {
-    let list = applyFilters(sorted, filters);
-    if (minFit > 0) list = list.filter((j) => (j.fit?.data?.fitScore ?? 0) >= minFit);
-    if (remoteOnly) list = list.filter((j) => j.parsed?.data?.remoteType === "remote");
-    if (priorityFilter !== "all") list = list.filter((j) => j.fit?.data?.priorityBand === priorityFilter);
-    return list;
-  }, [sorted, filters, minFit, remoteOnly, priorityFilter]);
+  const availableRoleTracks = useMemo(() => {
+    const rankedTracks = new Set<string>();
+    sorted.forEach((job) => {
+      const roleTrack = job.parsed?.data?.roleTrack;
+      if (roleTrack && roleTrack !== "pv") rankedTracks.add(roleTrack);
+    });
+    return ["clinical", "qa", "regulatory", "medinfo", "other"].filter((track) =>
+      rankedTracks.has(track)
+    );
+  }, [sorted]);
+
+  const filtered = useMemo(() => applyFilters(sorted, filters), [sorted, filters]);
 
   if (jobs.loading) {
     return <LoadingState label="Loading ranked jobs…" className="min-h-[300px]" />;
@@ -1006,40 +1001,10 @@ function InboxSection({
           filters={filters}
           onChange={setFilters}
           availableSources={sources}
+          availableRoleTracks={availableRoleTracks}
           jobCount={filtered.length}
           totalCount={sorted.length}
         />
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
-          <select
-            className="input py-1.5 text-xs w-auto"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-          >
-            <option value="all">Any priority</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-          <select
-            className="input py-1.5 text-xs w-auto"
-            value={minFit}
-            onChange={(e) => setMinFit(Number(e.target.value))}
-          >
-            <option value={0}>Any fit</option>
-            <option value={40}>≥ 40</option>
-            <option value={55}>≥ 55</option>
-            <option value={70}>≥ 70</option>
-          </select>
-          <button
-            className={cn(
-              "btn btn-sm",
-              remoteOnly ? "btn-secondary" : "btn-ghost"
-            )}
-            onClick={() => setRemoteOnly((v) => !v)}
-          >
-            Remote only
-          </button>
-        </div>
       </div>
 
       {sorted.length === 0 ? (
@@ -1053,7 +1018,7 @@ function InboxSection({
           title="No jobs match filters"
           description="Try loosening the fit threshold or clearing filters."
           action={
-            <ActionButton variant="ghost" onClick={() => { setFilters(DEFAULT_FILTERS); setMinFit(0); setRemoteOnly(false); setPriorityFilter("all"); }}>
+            <ActionButton variant="ghost" onClick={() => setFilters(DEFAULT_FILTERS)}>
               Clear filters
             </ActionButton>
           }
@@ -1126,7 +1091,7 @@ function RankedJobCard({
               <div className="flex items-center gap-1.5 flex-wrap mb-1">
                 {parsed?.roleTrack && parsed.roleTrack !== "other" && (
                   <span className="badge-neutral text-[9px]">
-                    {TRACK_LABELS[parsed.roleTrack] || parsed.roleTrack}
+                    {getRoleTrackLabel(parsed.roleTrack)}
                   </span>
                 )}
                 <span className="badge-neutral text-[9px]">{job.raw.source}</span>
@@ -1358,7 +1323,7 @@ function TrackedJobRow({
         <p className="text-xs text-slate-500 truncate">
           {company}
           {parsed?.roleTrack && parsed.roleTrack !== "other"
-            ? ` · ${TRACK_LABELS[parsed.roleTrack] || parsed.roleTrack}`
+            ? ` · ${getRoleTrackLabel(parsed.roleTrack)}`
             : ""}
         </p>
         {fit?.actionRecommendation && (

@@ -334,7 +334,7 @@ function inferStrengths(rawText: string, defaults: string[]): string[] {
     ["Clinical research coordination", /clinical research|trial coordination|CTA|CRA/i],
     ["Regulated healthcare documentation", /documentation|SOP|compliance|audit/i],
     ["Regulatory and quality awareness", /regulatory|quality|QA|GxP/i],
-    ["Pharmacovigilance awareness", /pharmacovigilance|drug safety|PV/i],
+    ["Drug safety awareness", /pharmacovigilance|drug safety|PV/i],
   ] as const;
 
   return unique([

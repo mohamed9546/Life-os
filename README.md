@@ -1,14 +1,15 @@
 # Life OS
 
-Single-tenant personal operating system. It ingests UK/remote job sources, scores roles against a career profile with local Ollama, drafts candidate profile data from CV text, and stores everything on disk in `data/*.json`.
+Single-tenant personal operating system. It ingests UK/remote job sources, scores roles against a career profile, drafts candidate profile data from CV text, and stores everything on disk in `data/*.json` when running in local-first mode.
 
-Built with Next.js 14, TypeScript, Tailwind, Ollama, and a local Python FastAPI sidecar for migrated AI tasks.
+Built with Next.js 14, TypeScript, Tailwind, a local Python FastAPI sidecar for selected AI tasks, and configurable AI runtimes spanning Ollama, Gemini, and OpenRouter.
 
 ## Features
 
 - **Career pipeline.** Pulls jobs from Adzuna, Reed, Jooble, Findwork, The Muse, Greenhouse, Lever, Remotive, Himalayas, SerpAPI, LinkedIn, Guardian, Careerjet, WeWorkRemotely, Arbeitnow, Indeed RSS, TotalJobs, and Jobs.ac.uk.
-- **Local AI analyst.** Paste a job posting and get structured parse, fit score, and action recommendation. `parse-job`, `evaluate-job`, and candidate-profile extraction can run through `python-ai`; other tasks use the TypeScript Ollama client.
-- **Application automation.** Gmail-backed recommendation pipeline, manual review logs, CV selection, and retry/run endpoints for application flows.
+- **AI analyst and routing.** Paste a job posting and get structured parse, fit score, and action recommendation. `parse-job` and `evaluate-job` can use Gemini directly or the Python sidecar in local mode; secondary tasks can fall back through OpenRouter.
+- **Application automation.** Gmail-backed recommendation pipeline, manual review logs, CV selection, retry/run endpoints, and Gmail-first recommendation prioritisation.
+- **Contact enrichment fallback.** If live people-search APIs are unavailable, Career still shows suggested contact roles so decision-maker outreach never renders empty.
 - **Career tools.** Cover-letter generation, CV optimization, interview prep, salary lookup, skill-gap analysis, and candidate-profile extraction from imported CV text.
 - **Life OS surfaces.** Money, decisions, routines, goals, journal, weekly review, morning briefing, and worker status.
 - **Local persistence.** `LIFE_OS_LOCAL_ONLY=true` forces Supabase off even if old env keys exist.
@@ -19,10 +20,10 @@ Built with Next.js 14, TypeScript, Tailwind, Ollama, and a local Python FastAPI 
 Next.js app
   - UI pages and API routes
   - /api/jobs/pipeline -> runFullPipeline()
-  - /api/ai/parse-job and /api/ai/evaluate-job -> python-ai sidecar
+  - /api/ai/parse-job and /api/ai/evaluate-job -> Gemini or python-ai sidecar depending on runtime
   - /api/profile/candidate and /api/profile/import-cv -> candidate-profile extraction
   - /api/applications/* -> recommendation pipeline, logs, and manual retries
-  - other /api/ai/* routes -> local Ollama client
+  - other /api/ai/* routes -> primary/secondary AI runtime routing
   - storage -> data/*.json
 
 python-ai FastAPI sidecar
@@ -39,7 +40,7 @@ Key files:
 - [src/lib/jobs/pipeline/](src/lib/jobs/pipeline/) - fetch, dedupe, enrich, rank
 - [src/lib/jobs/sources/](src/lib/jobs/sources/) - one adapter per job source
 - [src/lib/applications/auto-apply.ts](src/lib/applications/auto-apply.ts) - recommendation/application orchestration
-- [src/lib/ai/client.ts](src/lib/ai/client.ts) - local Ollama AI client
+- [src/lib/ai/client.ts](src/lib/ai/client.ts) - AI runtime routing and fallback logic
 - [python-ai/](python-ai/) - local Python AI sidecar
 - [src/lib/storage/index.ts](src/lib/storage/index.ts) - local JSON storage facade
 
@@ -56,7 +57,9 @@ Key files:
    cd ..
    ```
 
-3. Copy `.env.local.template` to `.env.local` and keep the local defaults:
+3. Copy `.env.local.template` to `.env.local`.
+
+   Local-first defaults:
 
    ```env
    LIFE_OS_LOCAL_ONLY=true
@@ -67,6 +70,12 @@ Key files:
    LLM_URL=http://127.0.0.1:11434/v1
    LLM_MODEL=qwen3.5:2b
    ```
+
+   Cloud runtime notes:
+
+   - Keep `GEMINI_API_KEY` and `OPENROUTER_API_KEY` in `.env.local` only.
+   - Do not persist provider keys into `data/*.json`.
+   - `LIFE_OS_LOCAL_ONLY=true` forces the app back to local-first behavior even if cloud keys exist.
 
 4. Pull the local model:
 
@@ -92,10 +101,14 @@ Key files:
 | `npm run dev` | Next.js dev server |
 | `npm run worker` | Continuous background worker; against a local dev server it now refuses by default unless you opt in |
 | `npm run worker:once` | Single worker pass |
+| `npm run lint` | ESLint check |
 | `npm run typecheck` | TypeScript check |
+| `npm run build` | Production build check |
 
 For local development, prefer `npm run worker:once`. Continuous local worker mode is opt-in via `node scripts/worker.mjs --allow-continuous-dev` or `WORKER_ALLOW_CONTINUOUS_DEV=true`.
 
 ## Data
 
 `data/*.json` is the local source of truth. Back it up before destructive changes. Backups created by local migration work live under `backups/` and are intentionally ignored by git.
+
+Cloud/provider secrets should stay env-only. Do not store Gemini, OpenRouter, or other provider keys in tracked files or `data/*.json`.

@@ -18,7 +18,7 @@ export function defaultCvLibrary(): CvLibraryEntry[] {
     },
     {
       id: "cv-pharmacy",
-      label: "Pharmacy / PV / MedInfo",
+      label: "Pharmacy / Drug Safety / MedInfo",
       path: "E:\\CV\\chatgpt\\Mohamed_Abdalla_CV_Pharmacy.pdf",
       roleTracks: ["pv", "medinfo", "other"],
       keywords: ["pharmacy", "pharmacovigilance", "drug safety", "medical information"],

@@ -328,7 +328,7 @@ export const DEFAULT_SEARCH_QUERIES: JobSearchQuery[] = [
   },
 
   // =====================================================
-  // SECONDARY TARGET — QA, Regulatory, PV, MedInfo
+  // SECONDARY TARGET — QA, Regulatory, Drug Safety, MedInfo
   // =====================================================
 
   // --- Scotland secondary ---

@@ -9,7 +9,7 @@ import { ParsedJobPostingSchema, validateAIOutput } from "../schemas";
 
 const SYSTEM_PROMPT = `You are a job posting parser for the UK life sciences / pharma job market.
 Your task is to extract structured information from job postings.
-Classify roleTrack conservatively, with special care for CTA, trial support, clinical operations support, QA, regulatory, PV, and medinfo pathways.
+Classify roleTrack conservatively, with special care for CTA, trial support, clinical operations support, QA, regulatory, drug safety, and medinfo pathways.
 Always respond with valid JSON matching the exact schema requested.
 Never include explanatory text outside the JSON object.
 If information is not available in the posting, use reasonable defaults or null.`;
@@ -370,7 +370,7 @@ function buildDeterministicFallback(
           : roleTrack === "qa"
             ? "Quality"
             : roleTrack === "pv"
-              ? "Pharmacovigilance"
+              ? "Drug Safety"
               : roleTrack === "medinfo"
                 ? "Medical Information"
                 : "Other",

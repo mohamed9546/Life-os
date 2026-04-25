@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { EnrichedJob } from "@/types";
 import { useApi } from "@/hooks/use-api";
+import { getRoleTrackLabel } from "@/lib/career/role-track-labels";
 import { cn } from "@/lib/utils";
 import { PriorityBadge } from "./priority-badge";
 import { ScoreBar } from "./score-bar";
@@ -135,7 +136,7 @@ export function JobDetailPanel({
                       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <SourceChip source={job.raw.source} />
               {parsed?.roleTrack && parsed.roleTrack !== "other" && (
-                <span className="badge-neutral">{parsed.roleTrack}</span>
+                <span className="badge-neutral">{getRoleTrackLabel(parsed.roleTrack)}</span>
               )}
               {fit?.visaRisk && (
                 <span className={`px-1.5 py-0.5 rounded text-2xs font-medium ${
