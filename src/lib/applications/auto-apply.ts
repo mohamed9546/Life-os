@@ -448,10 +448,11 @@ async function ensureApplicationDraft(
   const mailtoRecipient = extractMailtoRecipient(job.raw.link);
   const recipient = mailtoRecipient || outreach.contactEmail || profile.email || email;
   const selfReview = recipient === profile.email || recipient === email;
+  const directApplication = Boolean(mailtoRecipient) || !selfReview;
   const draftInput = {
     to: recipient,
-    subject: buildApplicationDraftSubject(job, Boolean(mailtoRecipient)),
-    body: buildApplicationDraftBody(job, profile, outreach.detail, selfReview),
+    subject: buildApplicationDraftSubject(job, directApplication),
+    body: buildApplicationDraftBody(job, profile, outreach, selfReview),
   };
   let draft;
 
@@ -495,36 +496,60 @@ function buildApplicationDraftSubject(job: EnrichedJob, directApplication: boole
 function buildApplicationDraftBody(
   job: EnrichedJob,
   profile: Awaited<ReturnType<typeof getApplicationProfile>>,
-  outreachDetail: string,
+  outreach: Awaited<ReturnType<typeof draftColdOutreachForJob>>,
   selfReview: boolean
 ): string {
+  const firstName = profile.fullName?.split(/\s+/)[0] || "there";
+  const greeting = selfReview
+    ? `Hi ${firstName},`
+    : outreach.contactName && !/hiring team|talent acquisition/i.test(outreach.contactName)
+      ? `Hello ${outreach.contactName},`
+      : "Hello Hiring Team,";
+  const summary = job.parsed?.data?.summary || "";
+  const strongestMatch = job.fit?.data?.whyMatched?.slice(0, 2) || [];
   const intro = selfReview
     ? [
-        `Hi ${profile.fullName || "Mohamed"},`,
+        greeting,
         "",
         "This draft was created by the recommendation pipeline for manual review.",
       ]
     : [
-        "Hello,",
+        greeting,
         "",
         `I would like to express interest in the ${job.raw.title} role at ${job.raw.company}.`,
+        "My CV is attached for review.",
       ];
 
   return [
     ...intro,
     "",
-    `Role: ${job.raw.title}`,
-    `Company: ${job.raw.company}`,
-    `Apply URL: ${job.raw.link}`,
-    `Fit: ${job.fit?.data.fitScore ?? "n/a"} (${job.fit?.data.priorityBand ?? "unscored"})`,
-    "CV attached: yes",
-    "",
-    outreachDetail,
+    !selfReview && strongestMatch.length > 0
+      ? `I believe the role is a strong fit because ${strongestMatch.join(" and ").replace(/\.$/, "")}.`
+      : null,
+    !selfReview && summary ? summary : null,
     "",
     selfReview
-      ? "Review the role, tailor the message if needed, and send manually."
-      : `Best regards,\n${profile.fullName || "Mohamed Abdalla"}`,
-  ].join("\n");
+      ? [
+          `Role: ${job.raw.title}`,
+          `Company: ${job.raw.company}`,
+          `Apply URL: ${job.raw.link}`,
+          `Target recipient: ${outreach.contactEmail || "not found"}`,
+          "CV attached: yes",
+          "Review the role, tweak the message if needed, and send manually.",
+        ].join("\n")
+      : [
+          "Thank you for your time and consideration.",
+          "",
+          `Best regards,\n${profile.fullName || "Mohamed Abdalla"}`,
+          profile.email ? profile.email : null,
+          profile.phone ? profile.phone : null,
+          profile.linkedinUrl ? profile.linkedinUrl : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildReviewOnlyDetail(job: EnrichedJob, outreachDetail?: string): string {

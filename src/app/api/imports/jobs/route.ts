@@ -10,6 +10,7 @@ import { generateDedupeKey } from "@/lib/jobs/sources";
 import { enrichSingleRawJob } from "@/lib/jobs/pipeline";
 import { PIPELINE_ENRICHMENT_BUDGETS } from "@/lib/jobs/pipeline/config";
 import { saveRawJobs, saveToInbox } from "@/lib/jobs/storage";
+import { syncJobsToNotionBestEffort } from "@/lib/integrations/notion-jobs";
 import { EnrichedJob } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
 
       if (enrichedJobs.length > 0) {
         await saveToInbox(enrichedJobs.filter((job) => job.status !== "rejected"), user.id);
+        await syncJobsToNotionBestEffort(user.id, enrichedJobs);
       }
 
       const record = await saveImportRecord(
@@ -133,6 +135,7 @@ export async function POST(request: NextRequest) {
 
     if (importedJobs.length > 0) {
       await saveToInbox(importedJobs.filter((job) => job.status !== "rejected"), user.id);
+      await syncJobsToNotionBestEffort(user.id, importedJobs);
     }
 
     const record = await saveImportRecord(

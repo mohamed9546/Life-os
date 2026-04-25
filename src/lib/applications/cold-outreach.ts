@@ -2,6 +2,7 @@ import { EnrichedJob, OutreachStrategy } from "@/types";
 import { buildContactStrategy } from "@/lib/enrichment";
 import { getBestContact } from "@/lib/jobs/selectors";
 import { updateStoredJob } from "@/lib/jobs/storage";
+import { inferHiringEmailForJob } from "./contact-email";
 import { createGmailDraft, getGmailSentStyleSamples } from "./gmail";
 
 export interface ColdOutreachDraftResult {
@@ -56,10 +57,14 @@ export async function draftColdOutreachForJob(
 
   const contact = getBestContact(enrichedJob);
   if (!contact?.email) {
+    const inferredHiringEmail = inferHiringEmailForJob(enrichedJob, contact?.title);
     return {
       draftId: null,
-      detail: "Cold outreach planned, but no verified contact email was found.",
-      contactName: contact?.fullName,
+      detail: inferredHiringEmail
+        ? `No verified person email was found, so the application draft will target ${inferredHiringEmail}.`
+        : "Cold outreach planned, but no verified contact email was found.",
+      contactName: contact?.fullName || contact?.title || "Hiring Team",
+      contactEmail: inferredHiringEmail || undefined,
       outreachStrategy: enrichedJob.outreachStrategy,
     };
   }

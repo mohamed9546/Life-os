@@ -18,6 +18,7 @@ import {
   getEnabledUserSourceIds,
 } from "@/lib/career/settings";
 import { isLocalOnlyMode } from "@/lib/env/local-only";
+import { syncAllJobsToNotionBestEffort } from "@/lib/integrations/notion-jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 900;
@@ -106,6 +107,7 @@ function executePipelineRun(userId: string, userEmail: string, runId: string) {
         result,
         completedAt: new Date().toISOString(),
       });
+      await syncAllJobsToNotionBestEffort(userId);
       await queueRecommendationPipeline(userId, userEmail, runId, run.options.skipRank);
     } catch (err) {
       console.error("[api/jobs/pipeline] Background run failed:", err);
@@ -169,6 +171,7 @@ export async function POST(request: NextRequest) {
           result,
           completedAt: new Date().toISOString(),
         });
+        await syncAllJobsToNotionBestEffort(user.id);
         await queueRecommendationPipeline(
           user.id,
           user.email,

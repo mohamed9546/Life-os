@@ -163,11 +163,7 @@ export async function buildContactStrategy(
 ): Promise<ContactStrategyResult> {
   const config = await loadEnrichmentConfig();
   const opts = options ?? {};
-
-  // Apollo must be configured and enabled — it's an optional power-up, not core.
-  if (!config.apollo.enabled || !config.apollo.apiKey) {
-    return { companyIntel: null, decisionMakers: [], outreachStrategy: null };
-  }
+  const apolloAvailable = config.apollo.enabled && Boolean(config.apollo.apiKey);
 
   const allowPeopleSearch =
     opts.ignoreThresholds || fit.fitScore >= config.minFitScoreForPeopleSearch;
@@ -178,7 +174,7 @@ export async function buildContactStrategy(
   let decisionMakers: DecisionMaker[] = [];
 
   // ---- Company enrichment ----
-  if (config.autoEnrichCompany || opts.forceCompanyIntel) {
+  if (apolloAvailable && (config.autoEnrichCompany || opts.forceCompanyIntel)) {
     const result = await apolloProvider.enrichByName(
       parsed.company,
       parsed.location ?? raw.location
@@ -191,7 +187,11 @@ export async function buildContactStrategy(
   }
 
   // ---- Decision maker search ----
-  if ((config.autoFindDecisionMakers || opts.forceDecisionMakers) && allowPeopleSearch) {
+  if (
+    apolloAvailable &&
+    (config.autoFindDecisionMakers || opts.forceDecisionMakers) &&
+    allowPeopleSearch
+  ) {
     const result = await apolloProvider.findDecisionMakers(
       parsed.company,
       companyIntel?.domain,

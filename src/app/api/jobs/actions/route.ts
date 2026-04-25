@@ -14,6 +14,7 @@ import { requireAppUser } from "@/lib/auth/session";
 import { buildContactStrategy } from "@/lib/enrichment";
 import { enrichSingleRawJob } from "@/lib/jobs/pipeline";
 import { evaluateJobFit } from "@/lib/ai/tasks/evaluate-job";
+import { syncJobsToNotionBestEffort } from "@/lib/integrations/notion-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -193,6 +194,13 @@ export async function POST(request: NextRequest) {
           { error: `Unknown action: ${action}` },
           { status: 400 }
         );
+    }
+
+    if (success) {
+      const updatedJob = await getJobById(id, user.id);
+      if (updatedJob) {
+        await syncJobsToNotionBestEffort(user.id, [updatedJob]);
+      }
     }
 
     return NextResponse.json({ success, action, id });
