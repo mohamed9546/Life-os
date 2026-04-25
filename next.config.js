@@ -15,22 +15,9 @@ const nextConfig = {
   },
   webpack: (config, { dev }) => {
     if (dev) {
-      const existingIgnored = config.watchOptions?.ignored;
-      const ignored = Array.isArray(existingIgnored)
-        ? existingIgnored
-        : existingIgnored
-          ? [existingIgnored]
-          : [];
-
       config.watchOptions = {
         ...(config.watchOptions || {}),
-        ignored: [
-          ...ignored,
-          /(^|[\\/])data[\\/]/,
-          /(^|[\\/])\.logs[\\/]/,
-          /(^|[\\/])backups[\\/]/,
-          /\.log$/,
-        ],
+        ignored: /(^|[\\/])(data|\.logs|backups)([\\/]|$)|\.log$/,
       };
     }
 

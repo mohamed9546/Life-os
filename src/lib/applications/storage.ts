@@ -1,6 +1,7 @@
 import { v4 as uuid } from "uuid";
 import {
   ApplicationLog,
+  ApplicationAttemptStatus,
   ApplicationProfile,
   CvLibraryEntry,
   TargetCompany,
@@ -23,6 +24,17 @@ export interface ProcessedGmailAlert {
 
 function withUser<T extends { userId?: string }>(items: T[], userId: string): T[] {
   return items.filter((item) => !item.userId || item.userId === userId);
+}
+
+const ACTIONABLE_APPLICATION_STATUSES = new Set<ApplicationAttemptStatus>([
+  "planned",
+  "applied",
+  "drafted",
+  "paused",
+]);
+
+export function isActionableApplicationStatus(status: ApplicationAttemptStatus): boolean {
+  return ACTIONABLE_APPLICATION_STATUSES.has(status);
 }
 
 export async function getTargetCompanies(): Promise<TargetCompany[]> {
@@ -124,7 +136,9 @@ export async function hasApplicationAttempt(
   userId: string,
   input: { dedupeKey?: string; sourceJobId?: string; applyUrl?: string }
 ): Promise<boolean> {
-  const logs = await getApplicationLogs(userId, 1000);
+  const logs = (await getApplicationLogs(userId, 1000)).filter((log) =>
+    isActionableApplicationStatus(log.status)
+  );
   const normalizedUrl = normalizeUrl(input.applyUrl || "");
   return logs.some((log) => {
     if (input.dedupeKey && log.dedupeKey === input.dedupeKey) return true;

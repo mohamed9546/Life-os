@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { readObject, writeObject } from "@/lib/storage";
+import { evaluateRawJobRelevance } from "@/lib/jobs/pipeline/relevance";
 import {
   getProcessedGmailAlerts,
   markGmailAlertsProcessed,
@@ -26,6 +27,10 @@ interface GmailToken {
   expiresAt: number;
 }
 
+async function readStoredGmailToken(): Promise<GmailToken | null> {
+  return readObject<GmailToken>(GMAIL_TOKEN_OBJECT);
+}
+
 interface GmailMessageSummary {
   id: string;
   threadId?: string;
@@ -41,6 +46,18 @@ interface GmailMessage {
     headers?: Array<{ name: string; value: string }>;
   };
   snippet?: string;
+}
+
+interface GoogleApiErrorPayload {
+  error?: {
+    code?: number;
+    message?: string;
+    status?: string;
+    errors?: Array<{
+      reason?: string;
+      message?: string;
+    }>;
+  };
 }
 
 type GoogleOAuthJson = {
@@ -173,7 +190,7 @@ export async function exchangeGmailCode(
 }
 
 async function getAccessToken(): Promise<string | null> {
-  const token = await readObject<GmailToken>(GMAIL_TOKEN_OBJECT);
+  const token = await readStoredGmailToken();
   if (!token) return null;
   if (token.expiresAt > Date.now() + 60_000) return token.accessToken;
 
@@ -221,7 +238,7 @@ export async function syncGmailJobAlerts(
 
   const query =
     process.env.GMAIL_JOB_ALERT_QUERY ||
-    'newer_than:21d ({from:indeed from:totaljobs from:irishjobs from:linkedin} OR subject:("job alert" OR jobs OR vacancy))';
+    'in:inbox newer_than:30d (from:linkedin OR from:indeed OR from:totaljobs OR from:irishjobs OR subject:"job alert" OR subject:"jobs for you" OR subject:"recommended jobs" OR subject:vacancy OR subject:hiring)';
   const maxMessages = options?.maxMessages || 25;
   const alreadyProcessed = new Set(
     (await getProcessedGmailAlerts(userId)).map((item) => item.messageId)
@@ -235,13 +252,105 @@ export async function syncGmailJobAlerts(
     const full = await gmailGetMessage(token, message.id);
     const text = extractTextFromGmailMessage(full);
     const source = detectAlertSource(full, text);
-    const alertJobs = parseJobAlertText(text, source, full.id);
+    const subject = getHeader(full, "subject");
+    const alertJobs = filterImportedGmailJobs(
+      parseJobAlertText(text, source, full.id, subject)
+    );
     jobs.push(...alertJobs);
-    processed.push({ messageId: full.id, threadId: full.threadId, source });
+    if (alertJobs.length > 0) {
+      processed.push({ messageId: full.id, threadId: full.threadId, source });
+    }
   }
 
   await markGmailAlertsProcessed(userId, processed);
   return { jobs, processed: processed.length };
+}
+
+export async function getGmailConnectionStatus(): Promise<{
+  configured: boolean;
+  connected: boolean;
+  email?: string;
+  error?: string;
+}> {
+  const client = getGmailOAuthClient();
+  if (!client) {
+    return {
+      configured: false,
+      connected: false,
+      error: "Google OAuth client is not configured.",
+    };
+  }
+
+  const storedToken = await readStoredGmailToken();
+  if (!storedToken?.accessToken) {
+    return {
+      configured: true,
+      connected: false,
+      error: "Gmail is not connected.",
+    };
+  }
+
+  const token = await getAccessToken();
+  if (!token) {
+    return {
+      configured: true,
+      connected: false,
+      error: "Gmail is not connected.",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      const error = await readGoogleApiError(response);
+      if (response.status === 403 && /scope|insufficient/i.test(error)) {
+        return {
+          configured: true,
+          connected: true,
+          error: error || "Gmail connected; profile lookup is blocked by the granted scopes.",
+        };
+      }
+      return {
+        configured: true,
+        connected: false,
+        error: error || `Gmail profile lookup failed: ${response.status}`,
+      };
+    }
+
+    const profile = (await response.json()) as { emailAddress?: string };
+    return {
+      configured: true,
+      connected: true,
+      email: profile.emailAddress,
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      connected: false,
+      error: err instanceof Error ? err.message : "Gmail connection check failed.",
+    };
+  }
+}
+
+async function readGoogleApiError(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as GoogleApiErrorPayload;
+    return (
+      payload.error?.message ||
+      payload.error?.errors?.[0]?.message ||
+      payload.error?.status ||
+      ""
+    );
+  } catch {
+    return "";
+  }
 }
 
 export async function createGmailApplicationDraft(input: {
@@ -354,37 +463,422 @@ function extractTextFromGmailMessage(message: GmailMessage): string {
   return htmlToText(parts.join("\n"));
 }
 
-function parseJobAlertText(text: string, source: string, messageId: string): RawJobItem[] {
+function parseJobAlertText(
+  text: string,
+  source: string,
+  messageId: string,
+  subject: string
+): RawJobItem[] {
   const now = new Date().toISOString();
   const links = extractLinks(text);
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length >= 4 && line.length <= 160);
-  const titleCandidates = lines.filter((line) =>
-    /clinical|trial|research|regulatory|quality|pharmacovigilance|drug safety|medical information|qa|gcp|cra|cta/i.test(line)
-  );
+  const lines = normalizeAlertLines(text);
+  const cards = extractAlertCards(source, lines, links, subject, text);
 
-  const jobs: RawJobItem[] = [];
-  const max = Math.max(links.length, titleCandidates.length);
-  for (let i = 0; i < Math.min(max, 10); i++) {
-    const link = links[i] || links[0] || "";
-    const title = titleCandidates[i] || titleCandidates[0] || "Job alert match";
-    if (!link && !title) continue;
-    jobs.push({
+  return cards.map((card, index) => ({
       source: `gmail-${source}`,
-      sourceJobId: `${messageId}-${i}`,
-      company: inferCompany(text, link),
-      title,
-      location: inferLocation(text),
-      link,
+      sourceJobId: `${messageId}-${index}`,
+      company: card.company,
+      title: card.title,
+      location: card.location,
+      link: card.link,
       description: text.slice(0, 6000),
       raw: { gmailMessageId: messageId, alertSource: source },
       fetchedAt: now,
-    });
+    }));
+}
+
+function normalizeAlertLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length >= 4 && line.length <= 160)
+    .filter((line) => !/^https?:\/\//i.test(line))
+    .filter(
+      (line) =>
+        !/(unsubscribe|manage alerts|job alert|email preferences|view jobs|see all jobs|privacy|terms|notification settings|recommended for you|based on your profile)/i.test(
+          line
+        )
+    );
+}
+
+function extractAlertCards(
+  source: string,
+  lines: string[],
+  links: string[],
+  subject: string,
+  fullText: string
+): Array<{ title: string; company: string; location: string; link: string }> {
+  if (source === "totaljobs") {
+    return extractTotaljobsCards(fullText);
+  }
+  if (source === "irishjobs") {
+    return extractIrishJobsCards(fullText);
+  }
+  if (source === "linkedin") {
+    return extractLinkedInCards(fullText);
+  }
+  if (source === "indeed") {
+    return extractIndeedCards(lines, links, subject, fullText);
   }
 
-  return jobs;
+  const cards: Array<{ title: string; company: string; location: string; link: string }> = [];
+  const seen = new Set<string>();
+
+  for (let index = 0; index < lines.length; index++) {
+    const title = lines[index];
+    if (!looksLikeJobTitle(title)) {
+      continue;
+    }
+
+    const company = findCompanyLine(lines, index + 1);
+    const location = findLocationLine(lines, index + 1);
+    const key = `${title.toLowerCase()}::${company.toLowerCase()}::${location.toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    cards.push({
+      title,
+      company: company || inferCompany(fullText, links[cards.length] || links[0] || ""),
+      location: location || inferLocation(fullText),
+      link: links[cards.length] || links[0] || "",
+    });
+
+    if (cards.length >= 3) {
+      break;
+    }
+  }
+
+  if (cards.length === 0) {
+    const title = deriveTitleFromSubject(subject);
+    if (title) {
+      cards.push({
+        title,
+        company: inferCompany(fullText, links[0] || ""),
+        location: inferLocation(fullText),
+        link: links[0] || "",
+      });
+    }
+  }
+
+  return cards;
+}
+
+function filterImportedGmailJobs(jobs: RawJobItem[]): RawJobItem[] {
+  return jobs.filter((job) => {
+    if (isHardRejectedGmailTitle(job.title)) {
+      return false;
+    }
+    const gate = evaluateRawJobRelevance(job);
+    if (gate.hardReject) {
+      return false;
+    }
+    if (["weak", "irrelevant"].includes(gate.regulatedHealthcareRelevance)) {
+      return false;
+    }
+    if (gate.supportNature === "leadership") {
+      return false;
+    }
+    if (!isTargetGmailLocation(job.location || job.description || "")) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function isHardRejectedGmailTitle(title: string): boolean {
+  return /\b(care assistant|health care assistant|healthcare assistant|support worker|caregiver|carer|nursing assistant|nightshift care assistant|dayshift care assistant)\b/i.test(
+    title
+  );
+}
+
+function isTargetGmailLocation(value: string): boolean {
+  const normalized = value.toLowerCase();
+  if (!normalized.trim()) {
+    return true;
+  }
+  if (/\b(remote|hybrid|uk|united kingdom|england|scotland|wales|glasgow|edinburgh|london|ireland|dublin|cork|galway|limerick|egypt|cairo)\b/.test(normalized)) {
+    return true;
+  }
+  if (/\b(minnesota|alaska|united states|usa|baltimore|maryland)\b/.test(normalized)) {
+    return false;
+  }
+  return !/\b[A-Z]{2}\b/.test(value);
+}
+
+function extractTotaljobsCards(
+  text: string
+): Array<{ title: string; company: string; location: string; link: string }> {
+  const cards: Array<{ title: string; company: string; location: string; link: string }> = [];
+  const seen = new Set<string>();
+  const chunks = text.split(/(?:Strong|Good).{0,4}Fit/i).slice(1);
+
+  for (const chunk of chunks) {
+    const block = rawAlertLines(chunk);
+    const title = block.find((line) => looksLikeJobTitle(line) && !isSectionHeading(line));
+    const link = block.find((line) => looksLikeTrackedJobUrl(line, "totaljobs"));
+    if (!title || !link) {
+      continue;
+    }
+    const titleIndex = block.indexOf(title);
+    const nearby = block.slice(titleIndex + 1, titleIndex + 7);
+    const company = nearby.find((line) => looksLikeCompanyLine(line)) || inferCompany(chunk, link);
+    const location = nearby.find((line) => looksLikeLocationLine(line)) || inferLocation(chunk);
+    const key = `${title.toLowerCase()}::${company.toLowerCase()}::${location.toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    cards.push({
+      title,
+      company: company || inferCompany(nearby.join("\n"), link),
+      location,
+      link,
+    });
+
+    if (cards.length >= 5) {
+      break;
+    }
+  }
+
+  return cards;
+}
+
+function extractIrishJobsCards(
+  text: string
+): Array<{ title: string; company: string; location: string; link: string }> {
+  const block = rawAlertLines(text);
+  const cards: Array<{ title: string; company: string; location: string; link: string }> = [];
+  const seen = new Set<string>();
+
+  for (let index = 0; index < block.length - 3; index++) {
+    const title = block[index];
+    const link = block[index + 1];
+    const company = block[index + 2];
+    const location = block[index + 3];
+    if (!looksLikeJobTitle(title) || !looksLikeTrackedJobUrl(link, "irishjobs")) {
+      continue;
+    }
+    if (!looksLikeCompanyLine(company) || !looksLikeLocationLine(location)) {
+      continue;
+    }
+    const key = `${title.toLowerCase()}::${company.toLowerCase()}::${location.toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    cards.push({ title, company, location, link: cleanTrackedUrl(link) });
+    if (cards.length >= 5) {
+      break;
+    }
+  }
+
+  return cards;
+}
+
+function extractLinkedInCards(
+  text: string
+): Array<{ title: string; company: string; location: string; link: string }> {
+  const block = rawAlertLines(text);
+  const cards: Array<{ title: string; company: string; location: string; link: string }> = [];
+  const seen = new Set<string>();
+
+  for (let index = 0; index < block.length - 3; index++) {
+    const title = block[index];
+    const company = block[index + 1];
+    const location = block[index + 2];
+    const linkLine = block[index + 3];
+    const link = linkLine.replace(/^View job:\s*/i, "");
+    if (!looksLikeJobTitle(title) || !looksLikeCompanyLine(company)) {
+      continue;
+    }
+    if (!looksLikeLocationLine(location) || !looksLikeTrackedJobUrl(link, "linkedin")) {
+      continue;
+    }
+    const key = `${title.toLowerCase()}::${company.toLowerCase()}::${location.toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    cards.push({ title, company, location, link: cleanTrackedUrl(link) });
+    if (cards.length >= 5) {
+      break;
+    }
+  }
+
+  return cards;
+}
+
+function extractIndeedCards(
+  lines: string[],
+  links: string[],
+  subject: string,
+  fullText: string
+): Array<{ title: string; company: string; location: string; link: string }> {
+  const cards: Array<{ title: string; company: string; location: string; link: string }> = [];
+  const seen = new Set<string>();
+
+  for (let index = 0; index < lines.length - 1; index++) {
+    const title = lines[index];
+    const companyLocation = lines[index + 1];
+    if (!looksLikeJobTitle(title) || !companyLocation.includes(" - ")) {
+      continue;
+    }
+    const [company, location] = companyLocation.split(/\s+-\s+/, 2).map((item) => item.trim());
+    if (!company || !location || isAlertNoise(company) || isAlertNoise(location)) {
+      continue;
+    }
+
+    const link = links[cards.length] || links[0] || "";
+    const key = `${title.toLowerCase()}::${company.toLowerCase()}::${location.toLowerCase()}`;
+    if (!link || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    cards.push({ title, company, location, link });
+    if (cards.length >= 5) {
+      break;
+    }
+  }
+
+  if (cards.length === 0) {
+    const fallback = deriveTitleFromSubject(subject);
+    if (fallback && links[0]) {
+      cards.push({
+        title: fallback,
+        company: inferCompany(fullText, links[0]),
+        location: inferLocation(fullText),
+        link: links[0],
+      });
+    }
+  }
+
+  return cards;
+}
+
+function deriveTitleFromSubject(subject: string): string | null {
+  const cleaned = subject
+    .replace(/^(job alert|jobs for you|recommended jobs|your job alert)\s*[:\-]?\s*/i, "")
+    .replace(/\s*[-|].*$/, "")
+    .trim();
+  if (!cleaned || cleaned.length < 4) {
+    return null;
+  }
+  return cleaned.slice(0, 120);
+}
+
+function looksLikeJobTitle(line: string): boolean {
+  if (line.length < 4 || line.length > 100) {
+    return false;
+  }
+  if (/[.!?;:]/.test(line)) {
+    return false;
+  }
+  const words = line.split(/\s+/);
+  if (words.length < 2 || words.length > 10) {
+    return false;
+  }
+  if (isAlertNoise(line) || isMetadataLine(line) || looksLikeLocationLine(line)) {
+    return false;
+  }
+  return /\b(assistant|associate|administrator|analyst|coordinator|specialist|officer|scientist|technician|technologist|research assistant|clinical scientist|regulatory affairs|quality assurance|pharmacovigilance|medical information|drug safety|cra|cta|study manager|clinical trial|medical affairs)\b/i.test(
+    line
+  );
+}
+
+function looksLikeCompanyLine(line: string): boolean {
+  if (line.length < 2 || line.length > 60) {
+    return false;
+  }
+  if (looksLikeLocationLine(line) || isMetadataLine(line) || isAlertNoise(line) || isSectionHeading(line)) {
+    return false;
+  }
+  if (/^https?:\/\//i.test(line) || /^\d/.test(line) || /\b(employees|days ago|just posted)\b/i.test(line)) {
+    return false;
+  }
+  return true;
+}
+
+function rawAlertLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /^https?:\/\//i.test(line) || line.length <= 200);
+}
+
+function looksLikeTrackedJobUrl(line: string, source: string): boolean {
+  const cleaned = cleanTrackedUrl(line);
+  if (!/^https?:\/\//i.test(cleaned)) {
+    return false;
+  }
+  return cleaned.toLowerCase().includes(source);
+}
+
+function cleanTrackedUrl(line: string): string {
+  return line
+    .replace(/^View job:\s*/i, "")
+    .replace(/^See matching results on Indeed:\s*/i, "")
+    .replace(/^Search for more related jobs.*?https?:\/\//i, "https://")
+    .trim()
+    .replace(/[),.]+$/, "")
+    .replace(/&amp;/g, "&");
+}
+
+function isSectionHeading(line: string): boolean {
+  return /^(strong fit|top skills|compliance support|customer and business support|continuous improvement|picked for you|jobs? \d+-\d+ of \d+)/i.test(
+    line
+  );
+}
+
+function findCompanyLine(lines: string[], startIndex: number): string {
+  for (let index = startIndex; index < Math.min(lines.length, startIndex + 4); index++) {
+    const line = lines[index];
+    if (isAlertNoise(line) || isMetadataLine(line) || looksLikeLocationLine(line)) {
+      continue;
+    }
+    if (looksLikeJobTitle(line)) {
+      continue;
+    }
+    if (line.split(/\s+/).length <= 8) {
+      return line;
+    }
+  }
+  return "";
+}
+
+function findLocationLine(lines: string[], startIndex: number): string {
+  for (let index = startIndex; index < Math.min(lines.length, startIndex + 6); index++) {
+    const line = lines[index];
+    if (looksLikeLocationLine(line)) {
+      return line;
+    }
+  }
+  return "";
+}
+
+function looksLikeLocationLine(line: string): boolean {
+  if (/(£|\bfrom\b|per annum|an hour|salary|bonus|pension|competitive|employees?)\b/i.test(line)) {
+    return false;
+  }
+  return /\b(remote|hybrid|onsite|glasgow|edinburgh|scotland|london|dublin|ireland|united kingdom|uk|egypt|cairo)\b/i.test(
+    line
+  ) || /,/.test(line) || /\([A-Z]{2,}\)/.test(line);
+}
+
+function isMetadataLine(line: string): boolean {
+  return /\b(permanent|contract|temporary|full[- ]time|part[- ]time|days? ago|salary|bonus|pension|apply now|easy apply|view job|top skills|strong fit|new|just posted|responsive employer|employees?)\b/i.test(
+    line
+  );
+}
+
+function isAlertNoise(line: string): boolean {
+  return /\b(hello|unsubscribe|manage alerts|email preferences|privacy|terms|notification settings|recommended for you|based on your profile|we recommend this job for you|take a look and see if you want to apply)\b/i.test(
+    line
+  );
 }
 
 function extractLinks(text: string): string[] {
@@ -399,14 +893,19 @@ function extractLinks(text: string): string[] {
 }
 
 function detectAlertSource(message: GmailMessage, text: string): string {
-  const headers = message.payload?.headers || [];
-  const from = headers.find((header) => header.name.toLowerCase() === "from")?.value || "";
-  const combined = `${from} ${text}`.toLowerCase();
+  const from = getHeader(message, "from");
+  const subject = getHeader(message, "subject");
+  const combined = `${from} ${subject} ${text}`.toLowerCase();
   if (combined.includes("irishjobs")) return "irishjobs";
   if (combined.includes("totaljobs")) return "totaljobs";
   if (combined.includes("linkedin")) return "linkedin";
   if (combined.includes("indeed")) return "indeed";
   return "job-alert";
+}
+
+function getHeader(message: GmailMessage, name: string): string {
+  const headers = message.payload?.headers || [];
+  return headers.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value || "";
 }
 
 function inferCompany(text: string, link: string): string {

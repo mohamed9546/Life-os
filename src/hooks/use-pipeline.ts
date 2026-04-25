@@ -31,6 +31,12 @@ export interface PipelineApiResult {
     parseFailures?: number;
     evaluationFailures?: number;
   };
+  recommendationPipeline?: {
+    planned: number;
+    drafted: number;
+    paused: number;
+    failed: number;
+  };
   error?: string;
 }
 

@@ -3,7 +3,7 @@
 // Coordinates: fetch -> dedupe -> enrich -> rank -> store
 // ============================================================
 
-import { EnrichedJob, RawJobItem } from "@/types";
+import { AutoApplyPipelineResult, EnrichedJob, RawJobItem } from "@/types";
 import {
   DEFAULT_SEARCH_QUERIES,
   getActiveAdapters,
@@ -63,6 +63,7 @@ export interface PipelineResult {
     rankMs: number;
     totalMs: number;
   };
+  recommendationPipeline?: AutoApplyPipelineResult;
 }
 
 export interface PipelineOptions {
@@ -74,6 +75,8 @@ export interface PipelineOptions {
   skipRank?: boolean;
   budgetProfile?: PipelineBudgetProfile;
 }
+
+const EXCLUDED_TITLE_PATTERN = /\b(manager|lead|director)\b/i;
 
 export async function runFullPipeline(
   options?: PipelineOptions
@@ -263,8 +266,9 @@ async function fetchFromSources(
           }
 
           if (result.jobs.length > 0) {
-            adapterJobs.push(...result.jobs);
-            adapterJobCount += result.jobs.length;
+            const filteredJobs = filterFetchedJobs(result.jobs);
+            adapterJobs.push(...filteredJobs);
+            adapterJobCount += filteredJobs.length;
           }
 
           await new Promise((resolve) => setTimeout(resolve, 250));
@@ -322,7 +326,7 @@ export async function fetchFromSource(
   for (const query of searchQueries) {
     try {
       const result = await adapter.fetchJobs(query);
-      allJobs.push(...result.jobs);
+      allJobs.push(...filterFetchedJobs(result.jobs));
       if (result.error) {
         error = result.error;
       }
@@ -376,6 +380,15 @@ function emptyResult(fetchResults: FetchResult[], fetchMs: number): PipelineResu
       totalMs: fetchMs,
     },
   };
+}
+
+export function filterFetchedJobs(jobs: RawJobItem[]): RawJobItem[] {
+  return jobs.filter((job) => !shouldExcludeFetchedJob(job));
+}
+
+function shouldExcludeFetchedJob(job: RawJobItem): boolean {
+  const title = (job.title || "").trim();
+  return EXCLUDED_TITLE_PATTERN.test(title);
 }
 
 function emptyEnrichmentStats(): EnrichmentResult["stats"] {

@@ -132,6 +132,7 @@ const FINANCE_TERMS = [
 const WET_LAB_TERMS = [
   "microbiologist",
   "laboratory scientist",
+  "lab technician",
   "wet lab",
   "bench scientist",
   "biomedical scientist",
@@ -150,6 +151,13 @@ const OTHER_HARD_NEGATIVES = [
   "dental sales",
   "insurance",
   "claims handler",
+  "care assistant",
+  "health care assistant",
+  "healthcare assistant",
+  "support worker",
+  "caregiver",
+  "carer",
+  "nursing home",
 ];
 
 export function evaluateRawJobRelevance(raw: RawJobItem): RelevanceGateResult {

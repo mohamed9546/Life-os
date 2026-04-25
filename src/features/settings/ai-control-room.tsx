@@ -127,14 +127,14 @@ export function AIControlRoom() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-secondary btn-sm" onClick={refresh} disabled={healthLoading}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <button className="btn-secondary btn-sm w-full sm:w-auto" onClick={refresh} disabled={healthLoading}>
             {healthLoading ? "Checking..." : "Health check"}
           </button>
-          <button className="btn-secondary btn-sm" onClick={runTest} disabled={testing}>
+          <button className="btn-secondary btn-sm w-full sm:w-auto" onClick={runTest} disabled={testing}>
             {testing ? "Testing..." : "Test prompt"}
           </button>
-          <button className="btn-primary btn-sm" onClick={save} disabled={saving}>
+          <button className="btn-primary btn-sm w-full sm:w-auto" onClick={save} disabled={saving}>
             {saving ? "Saving..." : "Save AI config"}
           </button>
         </div>
@@ -349,7 +349,7 @@ export function AIControlRoom() {
       </div>
 
       <div className="rounded-xl border border-surface-3 bg-surface-2 p-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-medium text-text-primary">Runtime toggle</h3>
             <p className="text-xs text-text-secondary mt-1">
@@ -358,7 +358,7 @@ export function AIControlRoom() {
             </p>
           </div>
           <button
-            className={`btn-sm ${config.enabled ? "btn-primary" : "btn-secondary"}`}
+            className={`btn-sm w-full sm:w-auto ${config.enabled ? "btn-primary" : "btn-secondary"}`}
             onClick={() => updateConfig({ enabled: !config.enabled })}
           >
             {config.enabled ? "AI enabled" : "AI disabled"}
@@ -367,7 +367,7 @@ export function AIControlRoom() {
       </div>
 
       <div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-text-primary">
             Task matrix
           </h3>
@@ -397,7 +397,7 @@ export function AIControlRoom() {
                   </p>
                 </div>
                 <button
-                  className={`btn-sm ${taskConfig.enabled ? "btn-primary" : "btn-secondary"}`}
+                  className={`btn-sm w-full sm:w-auto ${taskConfig.enabled ? "btn-primary" : "btn-secondary"}`}
                   onClick={() =>
                     updateTask(taskType, { enabled: !taskConfig.enabled })
                   }

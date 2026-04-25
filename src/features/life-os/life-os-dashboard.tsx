@@ -109,10 +109,10 @@ export function LifeOSDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-1 bg-surface-2 rounded-xl p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl bg-surface-2 p-1">
         {LIFE_OS_TABS.map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 min-w-fit py-2 px-2 rounded-lg text-xs font-semibold transition-all ${activeTab === tab.id ? "bg-surface-0 text-text-primary shadow-sm" : "text-text-tertiary hover:text-text-primary"}`}>
+            className={`min-w-fit flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition-all sm:min-w-0 ${activeTab === tab.id ? "bg-surface-0 text-text-primary shadow-sm" : "text-text-tertiary hover:text-text-primary"}`}>
             {tab.label}
           </button>
         ))}
@@ -128,7 +128,7 @@ export function LifeOSDashboard() {
 
       {activeTab === "weekly" && <>
       <section className="card">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-text-primary">
               Weekly review engine
@@ -137,7 +137,7 @@ export function LifeOSDashboard() {
               This pulls together your current Career, Money, and Decisions data into one AI weekly review.
             </p>
           </div>
-          <button className="btn-primary" onClick={generate} disabled={generating}>
+          <button className="btn-primary w-full sm:w-auto" onClick={generate} disabled={generating}>
             {generating ? "Generating..." : "Generate weekly review"}
           </button>
         </div>
@@ -146,7 +146,7 @@ export function LifeOSDashboard() {
 
       {latest ? (
         <section className="card space-y-5">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-text-primary">Latest weekly review</h2>
               <p className="text-sm text-text-secondary mt-1">
@@ -213,7 +213,7 @@ export function LifeOSDashboard() {
           <div className="space-y-3 mt-4">
             {entries.slice(1).map((entry) => (
               <div key={entry.id} className="rounded-lg bg-surface-2 px-4 py-3">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-sm font-medium text-text-primary">
                       {new Date(entry.createdAt).toLocaleString("en-GB")}

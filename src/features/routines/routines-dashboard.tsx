@@ -168,10 +168,10 @@ export function RoutinesDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-1 bg-surface-2 rounded-xl p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl bg-surface-2 p-1">
         {ROUTINES_TABS.map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${activeTab === tab.id ? "bg-surface-0 text-text-primary shadow-sm" : "text-text-tertiary hover:text-text-primary"}`}>
+            className={`min-w-fit flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all sm:min-w-0 ${activeTab === tab.id ? "bg-surface-0 text-text-primary shadow-sm" : "text-text-tertiary hover:text-text-primary"}`}>
             {tab.label}
           </button>
         ))}
@@ -189,7 +189,7 @@ export function RoutinesDashboard() {
       </div>
 
       <section className="card space-y-4">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-text-primary">
               Routine analytics
@@ -198,7 +198,7 @@ export function RoutinesDashboard() {
               Turn routine check-ins into operating-system signals for Life OS and next-step guidance.
             </p>
           </div>
-          <button className="btn-secondary btn-sm" onClick={generateInsight} disabled={insightLoading}>
+          <button className="btn-secondary btn-sm w-full sm:w-auto" onClick={generateInsight} disabled={insightLoading}>
             {insightLoading ? "Generating..." : "Generate AI routine focus"}
           </button>
         </div>
@@ -336,8 +336,8 @@ export function RoutinesDashboard() {
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <button className="btn-primary" onClick={submit} disabled={saving}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button className="btn-primary w-full sm:w-auto" onClick={submit} disabled={saving}>
               {saving ? "Saving..." : "Save routine"}
             </button>
             {error && <p className="text-sm text-danger">{error}</p>}
@@ -383,7 +383,7 @@ export function RoutinesDashboard() {
         ) : (
           data!.routines.map((routine) => (
             <div key={routine.id} className="card">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="badge-neutral">{routine.area}</span>
@@ -413,16 +413,16 @@ export function RoutinesDashboard() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <button
-                    className="btn-primary btn-sm"
+                    className="btn-primary btn-sm w-full sm:w-auto"
                     onClick={() => void checkIn(routine.id, "completed")}
                     disabled={checkingIn !== null}
                   >
                     {checkingIn === `${routine.id}:completed` ? "Saving..." : "Complete"}
                   </button>
                   <button
-                    className="btn-secondary btn-sm"
+                    className="btn-secondary btn-sm w-full sm:w-auto"
                     onClick={() => void checkIn(routine.id, "skipped")}
                     disabled={checkingIn !== null}
                   >

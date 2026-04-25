@@ -71,9 +71,9 @@ export function LifeTimeline() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-text-tertiary">{events.length} life events recorded</p>
-        <button onClick={() => setShowAdd(true)} className="btn-primary btn-sm flex items-center gap-1.5">
+        <button onClick={() => setShowAdd(true)} className="btn-primary btn-sm flex w-full items-center justify-center gap-1.5 sm:w-auto">
           <Plus size={13} /> Add Event
         </button>
       </div>
@@ -81,7 +81,7 @@ export function LifeTimeline() {
       {showAdd && (
         <div className="card space-y-3 animate-slide-up">
           <h3 className="text-sm font-semibold text-text-primary">Add Life Event</h3>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <label className="label">Date</label>
               <input type="date" className="input" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
@@ -95,9 +95,9 @@ export function LifeTimeline() {
           </div>
           <input className="input" placeholder="Event title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
           <textarea className="textarea min-h-[64px]" placeholder="Description (optional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button onClick={addEvent} className="btn-primary btn-sm flex-1">Add</button>
-            <button onClick={() => setShowAdd(false)} className="btn-ghost btn-sm">Cancel</button>
+            <button onClick={() => setShowAdd(false)} className="btn-ghost btn-sm w-full sm:w-auto">Cancel</button>
           </div>
         </div>
       )}
@@ -124,7 +124,7 @@ export function LifeTimeline() {
                   <div className={`absolute -left-9 w-6 h-6 rounded-full ${config.bg} flex items-center justify-center`}>
                     <Icon size={12} className={config.color} />
                   </div>
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-text-primary">{ev.title}</span>
@@ -136,7 +136,7 @@ export function LifeTimeline() {
                       {ev.description && <p className="text-xs text-text-secondary mt-1">{ev.description}</p>}
                     </div>
                     <button onClick={() => deleteEvent(ev.id)}
-                      className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-danger transition-opacity">
+                      className="self-start text-text-tertiary transition-opacity hover:text-danger sm:opacity-0 sm:group-hover:opacity-100">
                       <Trash2 size={13} />
                     </button>
                   </div>

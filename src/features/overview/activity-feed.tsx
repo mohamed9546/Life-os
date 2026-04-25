@@ -77,7 +77,7 @@ export function ActivityFeed() {
             {dayEvents.map(e => {
               const Icon = MODULE_ICONS[e.module] ?? Brain;
               return (
-                <div key={e.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-2 transition-colors">
+                <div key={e.id} className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-surface-2">
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${MODULE_COLORS[e.module] ?? "bg-surface-3 text-text-tertiary"}`}>
                     <Icon size={13} />
                   </div>
@@ -85,7 +85,7 @@ export function ActivityFeed() {
                     <p className="text-xs text-text-primary truncate">{e.title}</p>
                     <p className="text-2xs text-text-tertiary capitalize">{e.module} · {e.type.replace(/_/g, " ")}</p>
                   </div>
-                  <span className="text-2xs text-text-tertiary flex-shrink-0">
+                  <span className="max-w-[84px] text-right text-2xs text-text-tertiary sm:max-w-none">
                     {formatDistanceToNow(new Date(e.timestamp), { addSuffix: true })}
                   </span>
                 </div>

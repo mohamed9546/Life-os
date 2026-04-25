@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { runFullPipeline } from "@/lib/jobs/pipeline";
+import { runAutoApplyPipelineForUser } from "@/lib/applications/auto-apply";
 import {
   createPipelineRun,
   getActivePipelineRun,
@@ -21,7 +22,7 @@ export const maxDuration = 900;
 
 const activeRuns = new Set<string>();
 
-function executePipelineRun(userId: string, runId: string) {
+function executePipelineRun(userId: string, userEmail: string, runId: string) {
   if (activeRuns.has(runId)) {
     return;
   }
@@ -35,9 +36,24 @@ function executePipelineRun(userId: string, runId: string) {
       }
 
       const result = await runFullPipeline(run.options);
+      let recommendationPipeline;
+      if (!run.options.skipRank) {
+        try {
+          recommendationPipeline = await runAutoApplyPipelineForUser(userId, userEmail, {
+            skipDiscovery: true,
+          });
+        } catch (recommendationErr) {
+          console.warn(
+            "[api/jobs/pipeline] Recommendation pipeline failed after main pipeline:",
+            recommendationErr
+          );
+        }
+      }
       await updatePipelineRun(userId, runId, {
         status: "completed",
-        result,
+        result: recommendationPipeline
+          ? { ...result, recommendationPipeline }
+          : result,
         completedAt: new Date().toISOString(),
       });
     } catch (err) {
@@ -68,7 +84,7 @@ export async function POST(request: NextRequest) {
 
     const activeRun = await getActivePipelineRun(user.id);
     if (activeRun) {
-      executePipelineRun(user.id, activeRun.id);
+      executePipelineRun(user.id, user.email, activeRun.id);
       return NextResponse.json({
         success: true,
         runId: activeRun.id,
@@ -92,7 +108,7 @@ export async function POST(request: NextRequest) {
       skipRank,
     };
     const run = await createPipelineRun(user.id, options);
-    executePipelineRun(user.id, run.id);
+    executePipelineRun(user.id, user.email, run.id);
 
     return NextResponse.json({
       success: true,

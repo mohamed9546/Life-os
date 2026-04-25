@@ -140,10 +140,10 @@ export function OverviewDashboard() {
             description="Structured runtime signals, not chatbot framing."
           />
           <div className="mt-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900">Runtime status</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 break-all text-xs text-slate-500">
                   {aiLoading ? "Checking runtime..." : health?.endpoint || config?.baseUrl || "No endpoint"}
                 </p>
               </div>

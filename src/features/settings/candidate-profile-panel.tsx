@@ -188,7 +188,7 @@ export function CandidateProfilePanel() {
 
   return (
     <section className="card space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wider text-text-primary">
             Candidate profile
@@ -197,7 +197,7 @@ export function CandidateProfilePanel() {
             Upload CV PDFs into a reviewable profile draft, then approve what should drive job fit and outreach.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <label className="btn-secondary btn-sm cursor-pointer">
             {uploading ? "Importing..." : "Import CV PDFs"}
             <input
@@ -208,7 +208,7 @@ export function CandidateProfilePanel() {
               onChange={(event) => void uploadCv(event.target.files)}
             />
           </label>
-          <button className="btn-primary btn-sm" onClick={saveProfile} disabled={saving}>
+          <button className="btn-primary btn-sm w-full sm:w-auto" onClick={saveProfile} disabled={saving}>
             {saving ? "Saving..." : "Save profile"}
           </button>
         </div>
@@ -216,7 +216,7 @@ export function CandidateProfilePanel() {
 
       {draft && (
         <div className="rounded-lg border border-accent/30 bg-accent-subtle px-4 py-4">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold text-accent">Profile draft ready</p>
               <p className="text-sm text-text-primary mt-1">
@@ -224,7 +224,7 @@ export function CandidateProfilePanel() {
                 {Math.round(draft.confidence * 100)}%.
               </p>
             </div>
-            <button className="btn-primary btn-sm" onClick={approveDraft} disabled={saving}>
+            <button className="btn-primary btn-sm w-full sm:w-auto" onClick={approveDraft} disabled={saving}>
               {saving ? "Approving..." : "Approve draft"}
             </button>
           </div>
@@ -382,10 +382,10 @@ function Field({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <label className="label">{label}</label>
         {onSave && (
-          <button type="button" className="btn-secondary btn-sm" onClick={onSave} disabled={saving}>
+          <button type="button" className="btn-secondary btn-sm w-full sm:w-auto" onClick={onSave} disabled={saving}>
             {saving ? "Saving..." : "Save"}
           </button>
         )}
@@ -410,10 +410,10 @@ function TextAreaField({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <label className="label">{label}</label>
         {onSave && (
-          <button type="button" className="btn-secondary btn-sm" onClick={onSave} disabled={saving}>
+          <button type="button" className="btn-secondary btn-sm w-full sm:w-auto" onClick={onSave} disabled={saving}>
             {saving ? "Saving..." : "Save"}
           </button>
         )}

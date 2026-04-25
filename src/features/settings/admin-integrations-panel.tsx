@@ -201,7 +201,7 @@ export function AdminIntegrationsPanel() {
                 ].map(([label, value]) => (
                   <div
                     key={String(label)}
-                    className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2.5"
+                    className="flex flex-col gap-1 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <span className="text-sm text-slate-600">{label}</span>
                     <span className="font-mono text-sm text-slate-900">{String(value)}</span>

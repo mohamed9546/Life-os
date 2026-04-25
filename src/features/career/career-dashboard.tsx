@@ -92,6 +92,12 @@ export function CareerDashboard() {
     void refreshApplicationLogs();
   }, []);
 
+  useEffect(() => {
+    if (pipeline.lastResult) {
+      void refreshApplicationLogs();
+    }
+  }, [pipeline.lastResult]);
+
   const runRecommendationPipeline = async () => {
     setRecommendationPipelineRunning(true);
     setRecommendationPipelineError(null);
@@ -191,6 +197,7 @@ export function CareerDashboard() {
         error={recommendationPipelineError}
         onRun={() => void runRecommendationPipeline()}
         onRefresh={() => void refreshApplicationLogs()}
+        onJobsRefresh={() => void jobs.refresh()}
       />
 
       {/* Section nav */}
@@ -368,6 +375,12 @@ function PipelineResultBanner({ result }: { result: PipelineApiResult }) {
         s.contactsGenerated > 0 ? `${s.contactsGenerated} contacts` : null,
         s.outreachGenerated > 0 ? `${s.outreachGenerated} outreach` : null,
         s.failed > 0 ? `${s.failed} failed` : null,
+        result.recommendationPipeline?.drafted
+          ? `${result.recommendationPipeline.drafted} Gmail drafts`
+          : null,
+        result.recommendationPipeline?.planned
+          ? `${result.recommendationPipeline.planned} planned follow-ups`
+          : null,
         result.enrichment?.fallbackCount ? `${result.enrichment.fallbackCount} fallbacks` : null,
       ].filter(Boolean).join(" · ") || undefined}
     />
@@ -384,13 +397,23 @@ function AutoApplyPanel({
   error,
   onRun,
   onRefresh,
+  onJobsRefresh,
 }: {
   logs: ApplicationLog[];
   running: boolean;
   error: string | null;
   onRun: () => void;
   onRefresh: () => void;
+  onJobsRefresh: () => void;
 }) {
+  const [gmailStatus, setGmailStatus] = useState<{
+    configured: boolean;
+    connected: boolean;
+    email?: string;
+    error?: string;
+  } | null>(null);
+  const [gmailSyncRunning, setGmailSyncRunning] = useState(false);
+  const [gmailSyncMessage, setGmailSyncMessage] = useState<string | null>(null);
   const latest = logs[0];
   const nextRun = latest
     ? new Date(new Date(latest.attemptedAt).getTime() + 5 * 60 * 60 * 1000)
@@ -401,6 +424,66 @@ function AutoApplyPanel({
     drafted: logs.filter((log) => log.status === "drafted").length,
     paused: logs.filter((log) => log.status === "paused").length,
     failed: logs.filter((log) => log.status === "failed").length,
+  };
+
+  useEffect(() => {
+    async function loadGmailStatus() {
+      try {
+        const response = await fetch("/api/gmail/status");
+        const data = (await response.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          email?: string;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to load Gmail status");
+        }
+        setGmailStatus({
+          configured: Boolean(data.configured),
+          connected: Boolean(data.connected),
+          email: data.email,
+          error: data.error,
+        });
+      } catch (err) {
+        setGmailStatus({
+          configured: false,
+          connected: false,
+          error: err instanceof Error ? err.message : "Failed to load Gmail status",
+        });
+      }
+    }
+
+    void loadGmailStatus();
+  }, []);
+
+  const runGmailSync = async () => {
+    setGmailSyncRunning(true);
+    setGmailSyncMessage(null);
+    try {
+      const response = await fetch("/api/gmail/sync-alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxMessages: 25 }),
+      });
+      const data = (await response.json()) as {
+        success?: boolean;
+        processed?: number;
+        imported?: number;
+        error?: string;
+      };
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || "Gmail sync failed");
+      }
+      setGmailSyncMessage(
+        `Gmail sync checked ${data.processed ?? 0} alerts and imported ${data.imported ?? 0} jobs.`
+      );
+      await Promise.all([onRefresh(), onJobsRefresh()]);
+    } catch (err) {
+      setGmailSyncMessage(err instanceof Error ? err.message : "Gmail sync failed");
+    } finally {
+      setGmailSyncRunning(false);
+    }
   };
 
   return (
@@ -417,6 +500,23 @@ function AutoApplyPanel({
             Runs every 5 hours through the worker. It fetches jobs, ranks fit, chooses a CV, and leaves applications for manual review.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
+            <StatusChip
+              tone={
+                gmailStatus?.connected
+                  ? gmailStatus?.error
+                    ? "warning"
+                    : "success"
+                  : gmailStatus?.configured
+                    ? "warning"
+                    : "danger"
+              }
+            >
+              {gmailStatus?.connected
+                ? `Gmail connected${gmailStatus.email ? ` (${gmailStatus.email})` : ""}`
+                : gmailStatus?.configured
+                  ? "Gmail not connected"
+                  : "Gmail not configured"}
+            </StatusChip>
             <StatusChip tone="success">{counts.planned} planned</StatusChip>
             <StatusChip tone="neutral">{counts.applied} old applied logs</StatusChip>
             <StatusChip tone="info">{counts.drafted} drafted</StatusChip>
@@ -431,8 +531,12 @@ function AutoApplyPanel({
         </div>
         <div className="flex flex-wrap gap-2">
           <a className="btn-secondary" href="/api/gmail/auth/start">
-            Connect Gmail
+            {gmailStatus?.connected ? "Reconnect Gmail" : "Connect Gmail"}
           </a>
+          <ActionButton variant="secondary" onClick={() => void runGmailSync()} disabled={gmailSyncRunning}>
+            <RefreshCw size={13} />
+            {gmailSyncRunning ? "Syncing Gmail..." : "Sync Gmail Alerts"}
+          </ActionButton>
           <ActionButton variant="secondary" onClick={onRefresh}>
             <RefreshCw size={13} />
             Refresh Logs
@@ -445,6 +549,12 @@ function AutoApplyPanel({
       </div>
       {error && (
         <AlertBanner tone="danger" title="Recommendation pipeline failed" description={error} />
+      )}
+      {gmailStatus?.error && (
+        <AlertBanner tone={gmailStatus.connected ? "warning" : "danger"} title="Gmail status" description={gmailStatus.error} />
+      )}
+      {gmailSyncMessage && !error && (
+        <AlertBanner tone="info" title="Gmail sync" description={gmailSyncMessage} />
       )}
       <div className="space-y-3 md:hidden">
         {logs.slice(0, 8).map((log) => (

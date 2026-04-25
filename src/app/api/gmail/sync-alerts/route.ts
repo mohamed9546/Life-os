@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAppUser } from "@/lib/auth/session";
 import { syncGmailJobAlerts } from "@/lib/applications/gmail";
+import { filterFetchedJobs } from "@/lib/jobs/pipeline";
 import { saveRawJobs } from "@/lib/jobs/storage";
 
 export const dynamic = "force-dynamic";
@@ -14,15 +15,17 @@ export async function POST(request: NextRequest) {
       maxMessages:
         typeof body.maxMessages === "number" ? body.maxMessages : undefined,
     });
+    const filteredJobs = filterFetchedJobs(result.jobs);
 
-    if (result.jobs.length > 0) {
-      await saveRawJobs(result.jobs, user.id);
+    if (filteredJobs.length > 0) {
+      await saveRawJobs(filteredJobs, user.id);
     }
 
     return NextResponse.json({
       success: !result.error,
       ...result,
-      imported: result.jobs.length,
+      jobs: filteredJobs,
+      imported: filteredJobs.length,
     });
   } catch (err) {
     return NextResponse.json(

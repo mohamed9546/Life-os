@@ -10,6 +10,7 @@ import { resolvePipelineEnrichmentBudget } from "@/lib/jobs/pipeline/config";
 import { deduplicateJobs } from "@/lib/jobs/pipeline/dedupe";
 import { enrichJobs } from "@/lib/jobs/pipeline/enrich";
 import { rankJobs } from "@/lib/jobs/pipeline/rank";
+import { filterFetchedJobs } from "@/lib/jobs/pipeline";
 import {
   getEnrichedJobs,
   getInboxJobs,
@@ -26,9 +27,12 @@ import {
   appendApplicationLogs,
   getApplicationLogs,
   hasApplicationAttempt,
+  getApplicationProfile,
+  isActionableApplicationStatus,
 } from "./storage";
 import { buildCvPacket } from "./cv";
 import { draftColdOutreachForJob } from "./cold-outreach";
+import { createGmailApplicationDraft } from "./gmail";
 
 export interface AutoApplyOptions {
   maxApplications?: number;
@@ -37,6 +41,7 @@ export interface AutoApplyOptions {
    * opens browser automation or submits applications automatically.
    */
   skipBrowser?: boolean;
+  skipDiscovery?: boolean;
 }
 
 export async function runApplicationForJob(
@@ -79,13 +84,14 @@ export async function runApplicationForJob(
   }
 
   const outreach = await draftColdOutreachForJob(userId, job);
+  const applicationDraft = await ensureApplicationDraft(userId, email, job, packet, outreach);
   const log = buildLog(job, {
-    status: outreach.draftId ? "drafted" : "planned",
+    status: applicationDraft.draftId ? "drafted" : "planned",
     selectedCvId: packet.selectedCv.id,
     selectedCvPath: packet.selectedCvPath,
     tailoredCvPath: packet.tailoredCvPath,
-    detail: buildReviewOnlyDetail(job, outreach.detail),
-    gmailDraftId: outreach.draftId || undefined,
+    detail: buildReviewOnlyDetail(job, applicationDraft.detail),
+    gmailDraftId: applicationDraft.draftId || undefined,
   });
   await appendApplicationLogs(userId, [log]);
   return log;
@@ -95,42 +101,52 @@ export async function runAutoApplyPipeline(
   options?: AutoApplyOptions
 ): Promise<AutoApplyPipelineResult> {
   const user = await requireAppUser();
+  return runAutoApplyPipelineForUser(user.id, user.email, options);
+}
+
+export async function runAutoApplyPipelineForUser(
+  userId: string,
+  email: string,
+  options?: AutoApplyOptions
+): Promise<AutoApplyPipelineResult> {
   const logs: ApplicationLog[] = [];
   let fetched = 0;
   let imported = 0;
   let rankedCount = 0;
   const maxApplications = options?.maxApplications || 8;
 
-  const [gmailResult, companyResult] = await Promise.allSettled([
-    syncGmailJobAlerts(user.id, { maxMessages: 25 }),
-    fetchTargetCompanyJobs({ maxCompanies: 12, maxJobsPerCompany: 15 }),
-  ]);
+  if (!options?.skipDiscovery) {
+    const [gmailResult, companyResult] = await Promise.allSettled([
+      syncGmailJobAlerts(userId, { maxMessages: 25 }),
+      fetchTargetCompanyJobs({ maxCompanies: 12, maxJobsPerCompany: 15 }),
+    ]);
 
-  const rawJobs = [
-    ...(gmailResult.status === "fulfilled" ? gmailResult.value.jobs : []),
-    ...(companyResult.status === "fulfilled" ? companyResult.value.jobs : []),
-  ];
-  fetched = rawJobs.length;
+    const rawJobs = filterFetchedJobs([
+      ...(gmailResult.status === "fulfilled" ? gmailResult.value.jobs : []),
+      ...(companyResult.status === "fulfilled" ? companyResult.value.jobs : []),
+    ]);
+    fetched = rawJobs.length;
 
-  if (rawJobs.length > 0) {
-    const deduped = await deduplicateJobs(rawJobs);
-    if (deduped.newJobs.length > 0) {
-      await saveRawJobs(deduped.newJobs, user.id);
-      imported = deduped.newJobs.length;
+    if (rawJobs.length > 0) {
+      const deduped = await deduplicateJobs(rawJobs);
+      if (deduped.newJobs.length > 0) {
+        await saveRawJobs(deduped.newJobs, userId);
+        imported = deduped.newJobs.length;
 
-      const enrichment = await enrichJobs(deduped.newJobs, {
-        maxBatchSize: Math.min(resolvePipelineEnrichmentBudget("worker"), 10),
-      });
-      const inbox = enrichment.enriched.filter((job) => job.status === "inbox");
-      const rejected = enrichment.enriched.filter((job) => job.status === "rejected");
-      if (inbox.length > 0) await saveToInbox(inbox, user.id);
-      if (rejected.length > 0) await saveToRejected(rejected, user.id);
+        const enrichment = await enrichJobs(deduped.newJobs, {
+          maxBatchSize: Math.min(resolvePipelineEnrichmentBudget("worker"), 10),
+        });
+        const inbox = enrichment.enriched.filter((job) => job.status === "inbox");
+        const rejected = enrichment.enriched.filter((job) => job.status === "rejected");
+        if (inbox.length > 0) await saveToInbox(inbox, userId);
+        if (rejected.length > 0) await saveToRejected(rejected, userId);
+      }
     }
   }
 
   const [inboxJobs, enrichedJobs] = await Promise.all([
-    getInboxJobs(user.id),
-    getEnrichedJobs(user.id),
+    getInboxJobs(userId),
+    getEnrichedJobs(userId),
   ]);
   const rankedResult = rankJobs([
     ...inboxJobs,
@@ -139,21 +155,21 @@ export async function runAutoApplyPipeline(
     ),
   ]);
   if (rankedResult.ranked.length > 0) {
-    await overwriteRankedJobs(rankedResult.ranked, user.id);
+    await overwriteRankedJobs(rankedResult.ranked, userId);
   }
   rankedCount = rankedResult.stats.total;
 
-  const ranked = await getRankedJobs(user.id);
+  const ranked = await getRankedJobs(userId);
   const remaining = Math.max(0, maxApplications - countActionableLogs(logs));
   if (remaining > 0) {
     logs.push(
-      ...(await applyEligibleJobs(user.id, ranked, {
+      ...(await applyEligibleJobs(userId, email, ranked, {
         maxApplications: remaining,
       }))
     );
   }
 
-  await appendApplicationLogs(user.id, logs);
+  await appendApplicationLogs(userId, logs);
 
   return summarizeAutoApplyResult({
     fetched,
@@ -165,6 +181,7 @@ export async function runAutoApplyPipeline(
 
 async function applyEligibleJobs(
   userId: string,
+  email: string,
   ranked: EnrichedJob[],
   options: { maxApplications: number }
 ): Promise<ApplicationLog[]> {
@@ -174,7 +191,11 @@ async function applyEligibleJobs(
     .sort((left, right) => (right.fit?.data.fitScore || 0) - (left.fit?.data.fitScore || 0))
     .slice(0, Math.max(options.maxApplications * 5, options.maxApplications));
   const existingLogs = await getApplicationLogs(userId, 1000);
-  const existingKeys = new Set(existingLogs.map((log) => log.dedupeKey));
+  const existingKeys = new Set(
+    existingLogs
+      .filter((log) => isActionableApplicationStatus(log.status))
+      .map((log) => log.dedupeKey)
+  );
 
   for (const job of eligible) {
     if (
@@ -204,13 +225,14 @@ async function applyEligibleJobs(
     }
 
     const outreach = await draftColdOutreachForJob(userId, job);
+    const applicationDraft = await ensureApplicationDraft(userId, email, job, packet, outreach);
     logs.push(buildLog(job, {
-      status: outreach.draftId ? "drafted" : "planned",
+      status: applicationDraft.draftId ? "drafted" : "planned",
       selectedCvId: packet.selectedCv.id,
       selectedCvPath: packet.selectedCvPath,
       tailoredCvPath: packet.tailoredCvPath,
-      detail: buildReviewOnlyDetail(job, outreach.detail),
-      gmailDraftId: outreach.draftId || undefined,
+      detail: buildReviewOnlyDetail(job, applicationDraft.detail),
+      gmailDraftId: applicationDraft.draftId || undefined,
     }));
 
     if (countActionableLogs(logs) >= options.maxApplications) {
@@ -299,6 +321,100 @@ function buildLog(
 
 function isEmailApply(link: string): boolean {
   return /^mailto:/i.test(link);
+}
+
+async function ensureApplicationDraft(
+  userId: string,
+  email: string,
+  job: EnrichedJob,
+  packet: Awaited<ReturnType<typeof buildCvPacket>>,
+  outreach: Awaited<ReturnType<typeof draftColdOutreachForJob>>
+): Promise<{ draftId: string | null; detail: string }> {
+  if (outreach.draftId) {
+    return { draftId: outreach.draftId, detail: outreach.detail };
+  }
+
+  const profile = await getApplicationProfile(userId, email);
+  const mailtoRecipient = extractMailtoRecipient(job.raw.link);
+  const recipient = mailtoRecipient || outreach.contactEmail || profile.email || email;
+  const selfReview = recipient === profile.email || recipient === email;
+  const draftInput = {
+    to: recipient,
+    subject: buildApplicationDraftSubject(job, Boolean(mailtoRecipient)),
+    body: buildApplicationDraftBody(job, profile, outreach.detail, selfReview),
+  };
+  let draft;
+
+  try {
+    draft = await createGmailApplicationDraft({
+      ...draftInput,
+      attachmentPath: packet.tailoredCvPath || packet.selectedCvPath,
+    });
+  } catch {
+    draft = await createGmailApplicationDraft(draftInput);
+  }
+
+  return {
+    draftId: draft.draftId,
+    detail: draft.draftId
+      ? selfReview
+        ? `Gmail review draft created for manual follow-up. ${outreach.detail}`
+        : `Gmail application draft created for ${recipient}. ${outreach.detail}`
+      : draft.error || outreach.detail,
+  };
+}
+
+function extractMailtoRecipient(link: string): string | null {
+  if (!isEmailApply(link)) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(link.replace(/^mailto:/i, "").split("?")[0]).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildApplicationDraftSubject(job: EnrichedJob, directApplication: boolean): string {
+  return directApplication
+    ? `Application for ${job.raw.title} - ${job.raw.company}`
+    : `Review ${job.raw.title} at ${job.raw.company}`;
+}
+
+function buildApplicationDraftBody(
+  job: EnrichedJob,
+  profile: Awaited<ReturnType<typeof getApplicationProfile>>,
+  outreachDetail: string,
+  selfReview: boolean
+): string {
+  const intro = selfReview
+    ? [
+        `Hi ${profile.fullName || "Mohamed"},`,
+        "",
+        "This draft was created by the recommendation pipeline for manual review.",
+      ]
+    : [
+        "Hello,",
+        "",
+        `I would like to express interest in the ${job.raw.title} role at ${job.raw.company}.`,
+      ];
+
+  return [
+    ...intro,
+    "",
+    `Role: ${job.raw.title}`,
+    `Company: ${job.raw.company}`,
+    `Apply URL: ${job.raw.link}`,
+    `Fit: ${job.fit?.data.fitScore ?? "n/a"} (${job.fit?.data.priorityBand ?? "unscored"})`,
+    "CV attached: yes",
+    "",
+    outreachDetail,
+    "",
+    selfReview
+      ? "Review the role, tailor the message if needed, and send manually."
+      : `Best regards,\n${profile.fullName || "Mohamed Abdalla"}`,
+  ].join("\n");
 }
 
 function buildReviewOnlyDetail(job: EnrichedJob, outreachDetail?: string): string {

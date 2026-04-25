@@ -82,16 +82,16 @@ export function WeeklyReview() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs text-text-tertiary">Week of {weekStr}</p>
           <p className="text-xs text-text-tertiary">{answeredCount}/{totalQuestions} questions answered</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={copy} className="btn-ghost btn-sm flex items-center gap-1.5">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button onClick={copy} className="btn-ghost btn-sm flex w-full items-center justify-center gap-1.5 sm:w-auto">
             {copied ? <CheckCircle size={13} /> : <Copy size={13} />} Export
           </button>
-          <button onClick={generateSummary} disabled={loading} className="btn-primary btn-sm flex items-center gap-1.5">
+          <button onClick={generateSummary} disabled={loading} className="btn-primary btn-sm flex w-full items-center justify-center gap-1.5 sm:w-auto">
             {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             AI Summary
           </button>

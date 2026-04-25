@@ -299,7 +299,7 @@ export function MoneyDashboard() {
       </div>
 
       <section className="card space-y-4">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-text-primary">
               AI money review
@@ -308,7 +308,7 @@ export function MoneyDashboard() {
               Generate a structured spending review with recurring commitments, unusual spikes, monthly adjustments, and a stability warning.
             </p>
           </div>
-          <button className="btn-primary btn-sm" onClick={generateReview} disabled={reviewing}>
+          <button className="btn-primary btn-sm w-full sm:w-auto" onClick={generateReview} disabled={reviewing}>
             {reviewing ? "Generating..." : "Generate money review"}
           </button>
         </div>
@@ -342,7 +342,7 @@ export function MoneyDashboard() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
         <section className="card space-y-4">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-text-primary">
                 Transaction intake
@@ -352,7 +352,7 @@ export function MoneyDashboard() {
               </p>
             </div>
             <button
-              className="btn-secondary btn-sm"
+              className="btn-secondary btn-sm w-full sm:w-auto"
               onClick={categorizeAll}
               disabled={categorizing}
             >
@@ -399,7 +399,7 @@ export function MoneyDashboard() {
             />
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <button className="btn-primary" onClick={submit} disabled={saving}>
               {saving ? "Saving..." : "Add transaction"}
             </button>
@@ -497,8 +497,8 @@ export function MoneyDashboard() {
                       placeholder="Category"
                     />
                   </div>
-                  <div className="flex items-center gap-3 mt-3">
-                    <label className="text-xs text-text-secondary flex items-center gap-2">
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <label className="flex items-center gap-2 text-xs text-text-secondary">
                       <input
                         type="checkbox"
                         checked={state.saveRule}
@@ -515,7 +515,7 @@ export function MoneyDashboard() {
                       Reuse this cleanup for similar merchants
                     </label>
                     <button
-                      className="btn-primary btn-sm ml-auto"
+                      className="btn-primary btn-sm w-full sm:ml-auto sm:w-auto"
                       onClick={() => void applyReview(transaction)}
                       disabled={updatingId !== null}
                     >
@@ -544,7 +544,7 @@ export function MoneyDashboard() {
             data!.transactions.map((transaction) => (
               <div
                 key={transaction.id}
-                className="rounded-lg bg-surface-2 px-4 py-3 flex items-start justify-between gap-4"
+                className="flex flex-col gap-3 rounded-lg bg-surface-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
               >
                 <div className="min-w-0">
                   <p className="text-sm text-text-primary font-medium">
@@ -569,7 +569,7 @@ export function MoneyDashboard() {
                   </div>
                 </div>
                 <p
-                  className={`text-sm font-semibold ${
+                  className={`self-start text-sm font-semibold sm:self-auto ${
                     transaction.amount >= 0 ? "text-success" : "text-text-primary"
                   }`}
                 >

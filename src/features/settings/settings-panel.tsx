@@ -278,7 +278,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
             <StatusChip tone={isAdmin ? "success" : "neutral"}>
               {isAdmin ? "Admin workspace" : "Member workspace"}
             </StatusChip>
-            <button className="btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-primary w-full sm:w-auto" onClick={save} disabled={saving}>
               {saving ? "Saving..." : "Save settings"}
             </button>
           </div>
@@ -546,7 +546,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
               </div>
 
               <CommandBar className="mt-4">
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                   <button
                     className={`btn-sm ${search.enabled ? "btn-primary" : "btn-secondary"}`}
                     onClick={() => updateSearch(search.id, { enabled: !search.enabled })}
@@ -556,7 +556,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
                   <button className="btn-ghost btn-sm" onClick={() => removeSearch(search.id)}>
                     Remove
                   </button>
-                  <label className="ml-auto flex items-center gap-2 text-xs text-slate-600">
+                  <label className="flex items-center gap-2 text-xs text-slate-600 sm:ml-auto">
                     <input
                       type="checkbox"
                       checked={search.remoteOnly}
@@ -574,7 +574,7 @@ export function SettingsPanel({ isAdmin = false }: { isAdmin?: boolean }) {
       </section>
 
       {saveMessage || settingsApi.error ? (
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:gap-4">
           {saveMessage ? <span className="text-emerald-700">{saveMessage}</span> : null}
           {settingsApi.error ? <span className="text-rose-700">{settingsApi.error}</span> : null}
         </div>

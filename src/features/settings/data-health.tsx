@@ -43,13 +43,13 @@ export function DataHealthDashboard() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-3 text-sm sm:gap-4">
           <span className="flex items-center gap-1.5 text-success"><CheckCircle size={14} /> {healthy} healthy</span>
           <span className="flex items-center gap-1.5 text-warning"><AlertTriangle size={14} /> {stale} stale</span>
           <span className="flex items-center gap-1.5 text-danger"><XCircle size={14} /> {empty} empty</span>
         </div>
-        <button onClick={load} className="btn-ghost btn-sm flex items-center gap-1.5">
+        <button onClick={load} className="btn-ghost btn-sm flex w-full items-center justify-center gap-1.5 sm:w-auto">
           <RefreshCw size={13} /> Refresh
         </button>
       </div>
@@ -62,7 +62,7 @@ export function DataHealthDashboard() {
           }`}>
             <StatusIcon status={m.status} />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-sm font-medium text-text-primary">{m.label}</span>
                 <span className="badge-neutral">{m.count} items</span>
               </div>
@@ -80,7 +80,7 @@ export function DataHealthDashboard() {
         ))}
       </div>
 
-      <div className="card flex items-center gap-3 py-3">
+      <div className="card flex flex-col gap-3 py-3 sm:flex-row sm:items-center">
         <Database size={16} className="text-accent" />
         <div>
           <p className="text-sm font-medium text-text-primary">Local-first storage</p>
