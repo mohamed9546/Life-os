@@ -29,6 +29,7 @@ import { recordWorkerRun } from "./run-history";
 import { getTransactions, updateTransaction } from "@/lib/money/storage";
 import { categorizeTransaction } from "@/lib/ai";
 import { generateWeeklyReview } from "@/lib/life-os/weekly-review";
+import { runAutoApplyPipeline } from "@/lib/applications/auto-apply";
 
 const WORKER_USER_ID = process.env.LIFE_OS_DEFAULT_USER_ID || "preview-user";
 
@@ -132,6 +133,34 @@ export interface PolicyCheck {
   reason?: string;
 }
 
+export function buildDisplayTaskState(
+  config: WorkerTaskConfig,
+  state?: WorkerTaskState | null
+): WorkerTaskState {
+  const baseState: WorkerTaskState = state || {
+    taskId: config.id,
+    status: "idle",
+    lastRun: null,
+    lastSuccess: null,
+    lastFailure: null,
+    consecutiveFailures: 0,
+    runsToday: 0,
+    todayDate: new Date().toISOString().slice(0, 10),
+  };
+  const policy = checkTaskPolicy(config, baseState);
+
+  if (!policy.allowed && baseState.status !== "running") {
+    return {
+      ...baseState,
+      status: "skipped",
+      skippedReason: policy.reason,
+      error: undefined,
+    };
+  }
+
+  return baseState;
+}
+
 export function checkTaskPolicy(
   config: WorkerTaskConfig,
   state: WorkerTaskState
@@ -224,16 +253,6 @@ export async function executeTask(
   if (!force) {
     const policy = checkTaskPolicy(config, state);
     if (!policy.allowed) {
-      await updateTaskState(taskId, {
-        status: "skipped",
-        skippedReason: policy.reason,
-      });
-      await recordWorkerRun({
-        taskId,
-        status: "skipped",
-        actorId: "worker",
-        error: policy.reason,
-      });
       return {
         taskId,
         status: "skipped",
@@ -422,6 +441,8 @@ async function runTaskFunction(
       return runCategorizeLedgerTaskV2();
     case "full-pipeline":
       return runFullPipelineTask();
+    case "auto-apply-pipeline":
+      return runAutoApplyPipelineTask();
     default:
       throw new Error(`No function registered for task: ${taskId}`);
   }
@@ -551,6 +572,21 @@ async function runFullPipelineTask(): Promise<Record<string, unknown>> {
     timeoutFailures: result.enrichment.timeoutFailures,
     fallbackCount: result.enrichment.fallbackCount,
     totalMs: result.timing.totalMs,
+  };
+}
+
+async function runAutoApplyPipelineTask(): Promise<Record<string, unknown>> {
+  const result = await runAutoApplyPipeline();
+  return {
+    fetched: result.fetched,
+    imported: result.imported,
+    ranked: result.ranked,
+    planned: result.planned,
+    applied: result.applied,
+    drafted: result.drafted,
+    paused: result.paused,
+    skipped: result.skipped,
+    failed: result.failed,
   };
 }
 

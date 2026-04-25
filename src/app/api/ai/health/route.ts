@@ -6,9 +6,9 @@
 import { NextResponse } from "next/server";
 import { checkAIHealth } from "@/lib/ai/client";
 import { getAIUsageStats } from "@/lib/ai/rate-limiter";
-import { loadAIConfig } from "@/lib/ai/config";
+import { DEFAULT_AI_CONFIG, loadAIConfig } from "@/lib/ai/config";
 import { Collections, readCollection } from "@/lib/storage";
-import { AIFailureKind, AITaskType } from "@/types";
+import { AIConfig, AIFailureKind, AITaskType } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -68,18 +68,32 @@ export async function GET() {
     });
   } catch (err) {
     console.error("[api/ai/health] Error:", err);
+
+    // Resolve the configured runtime so the failure response reflects
+    // reality (ollama in local-only mode) instead of a hard-coded
+    // gemini fallback that confuses the Settings UI.
+    let config: AIConfig = DEFAULT_AI_CONFIG;
+    try {
+      config = await loadAIConfig();
+    } catch (configErr) {
+      console.warn(
+        "[api/ai/health] loadAIConfig failed in catch path; using DEFAULT_AI_CONFIG",
+        configErr
+      );
+    }
+
     return NextResponse.json(
       {
         health: {
           available: false,
-          provider: "gemini",
-          mode: "cloud",
-          compatibilityMode: "openai",
+          provider: config.provider,
+          mode: config.mode,
+          compatibilityMode: config.compatibilityMode,
           error: err instanceof Error ? err.message : "Unknown error",
           checkedAt: new Date().toISOString(),
-          endpoint: "gemini",
-          primaryModel: null,
-          fallbackModel: null,
+          endpoint: config.baseUrl || config.provider,
+          primaryModel: config.model,
+          fallbackModel: config.fallbackModel,
           responseTimeMs: null,
           availableModels: [],
           configuredTasks: [],

@@ -69,9 +69,46 @@ export function useAIHealth(autoRefreshMs: number = 30_000) {
   }, []);
 
   useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, autoRefreshMs);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (interval || autoRefreshMs <= 0) {
+        return;
+      }
+      interval = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          void refresh();
+        }
+      }, autoRefreshMs);
+    }
+
+    function stopPolling() {
+      if (!interval) {
+        return;
+      }
+      clearInterval(interval);
+      interval = null;
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refresh();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    }
+
+    void refresh();
+    if (document.visibilityState === "visible") {
+      startPolling();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      stopPolling();
+    };
   }, [refresh, autoRefreshMs]);
 
   return { ...state, refresh };

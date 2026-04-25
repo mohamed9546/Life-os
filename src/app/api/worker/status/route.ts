@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import {
   getAllTaskConfigs,
   getAllTaskStates,
+  buildDisplayTaskState,
   checkTaskPolicy,
 } from "@/lib/worker";
 import { requireAdminUser } from "@/lib/auth/session";
@@ -21,20 +22,12 @@ export async function GET() {
 
     const tasks = configs.map((config) => {
       const state = states.find((s) => s.taskId === config.id);
-      const policy = state ? checkTaskPolicy(config, state) : { allowed: true };
+      const displayState = buildDisplayTaskState(config, state);
+      const policy = checkTaskPolicy(config, displayState);
 
       return {
         ...config,
-        state: state || {
-          taskId: config.id,
-          status: "idle",
-          lastRun: null,
-          lastSuccess: null,
-          lastFailure: null,
-          consecutiveFailures: 0,
-          runsToday: 0,
-          todayDate: new Date().toISOString().slice(0, 10),
-        },
+        state: displayState,
         policyAllowed: policy.allowed,
         policyReason: policy.reason,
       };

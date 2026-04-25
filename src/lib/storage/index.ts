@@ -312,6 +312,11 @@ export const Collections = {
   IMPORT_RECORDS: "import-records",
   AI_LOG: "ai-log",
   WORKER_STATE: "worker-state",
+  TARGET_COMPANIES: "target-companies",
+  CV_LIBRARY: "cv-library",
+  APPLICATION_PROFILE: "application-profile",
+  APPLICATION_LOGS: "application-logs",
+  PROCESSED_GMAIL_ALERTS: "processed-gmail-alerts",
 } as const;
 
 export const ConfigFiles = {

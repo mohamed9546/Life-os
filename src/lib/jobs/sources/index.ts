@@ -25,7 +25,6 @@ import { JoobleAdapter } from "./jooble";
 import { RemotiveAdapter } from "./remotive";
 import { ArbeitnowAdapter } from "./arbeitnow";
 import { HimalayasAdapter } from "./himalayas";
-import { BrightNetworkAdapter } from "./brightnetwork";
 import { TheMuseAdapter } from "./themuse";
 import { CareerJetAdapter } from "./careerjet";
 import { FindWorkAdapter } from "./findwork";
@@ -53,7 +52,6 @@ export function getAllAdapters(): JobSourceAdapter[] {
     new RemotiveAdapter(),
     new ArbeitnowAdapter(),
     new HimalayasAdapter(),
-    new BrightNetworkAdapter(),
     new TheMuseAdapter(),
     new CareerJetAdapter(),
     new FindWorkAdapter(),

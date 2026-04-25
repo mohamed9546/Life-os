@@ -7,40 +7,57 @@ export const maxDuration = 300;
 
 export async function POST(request: Request) {
   let userId: string | null = null;
+  let receivedCount = 0;
+  let importedCount = 0;
+  let failedCount = 0;
 
   try {
     const user = await requireAppUser();
     userId = user.id;
-    const [{ extractCandidateProfile }, { extractTextFromPdfUpload }, { saveCandidateProfileDraft }, { saveImportRecord }] =
-      await Promise.all([
-        import("@/lib/ai"),
-        import("@/lib/profile/pdf"),
-        import("@/lib/profile/candidate-profile"),
-        import("@/lib/imports/storage"),
-      ]);
-
     const formData = await request.formData();
     const uploads = formData.getAll("files").filter((item): item is File => item instanceof File);
+    receivedCount = uploads.length;
 
     if (uploads.length === 0) {
       return NextResponse.json({ error: "At least one PDF is required" }, { status: 400 });
     }
 
+    const { extractTextFromPdfUpload } = await import("@/lib/profile/pdf");
     const sourceFiles: string[] = [];
     const extractedTexts: string[] = [];
+    const extractionFailures: string[] = [];
 
     for (const upload of uploads) {
-      const bytes = new Uint8Array(await upload.arrayBuffer());
-      const text = await extractTextFromPdfUpload(upload.name, bytes);
-      if (text.trim()) {
+      try {
+        const bytes = new Uint8Array(await upload.arrayBuffer());
+        const text = await extractTextFromPdfUpload(upload.name, bytes);
+        if (!text.trim()) {
+          throw new Error(`Could not extract text from ${upload.name}: PDF returned no readable text.`);
+        }
+
         sourceFiles.push(upload.name);
         extractedTexts.push(text.trim());
+        importedCount = sourceFiles.length;
+      } catch (err) {
+        failedCount += 1;
+        extractionFailures.push(err instanceof Error ? err.message : `${upload.name}: PDF extraction failed`);
       }
     }
 
     if (extractedTexts.length === 0) {
-      throw new Error("The uploaded PDFs did not produce readable text");
+      const reason =
+        extractionFailures.length > 0
+          ? extractionFailures.join(" ")
+          : "The uploaded PDFs did not produce readable text.";
+      throw new Error(reason);
     }
+
+    const [{ extractCandidateProfile }, { saveCandidateProfileDraft }, { saveImportRecord }] =
+      await Promise.all([
+        import("@/lib/ai"),
+        import("@/lib/profile/candidate-profile"),
+        import("@/lib/imports/storage"),
+      ]);
 
     const combinedText = extractedTexts.join("\n\n");
     const result = await extractCandidateProfile(combinedText, sourceFiles);
@@ -56,11 +73,14 @@ export async function POST(request: Request) {
         label: "CV PDF import",
         status: "success",
         counts: {
-          received: uploads.length,
-          imported: sourceFiles.length,
-          failed: uploads.length - sourceFiles.length,
+          received: receivedCount,
+          imported: importedCount,
+          failed: failedCount,
         },
-        summary: `Extracted ${sourceFiles.length} CV file(s) into a candidate profile draft for review.`,
+        summary:
+          failedCount > 0
+            ? `Extracted ${importedCount} CV file(s) into a candidate profile draft for review. ${failedCount} file(s) could not be read.`
+            : `Extracted ${importedCount} CV file(s) into a candidate profile draft for review.`,
       },
       userId
     );
@@ -80,9 +100,9 @@ export async function POST(request: Request) {
             label: "CV PDF import failed",
             status: "failed",
             counts: {
-              received: 0,
-              imported: 0,
-              failed: 1,
+              received: receivedCount,
+              imported: importedCount,
+              failed: failedCount || Math.max(1, receivedCount - importedCount),
             },
             summary: err instanceof Error ? err.message : "CV import failed",
           },

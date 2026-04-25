@@ -119,9 +119,45 @@ export function AutomationDashboard() {
   };
 
   useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, 20_000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (interval) {
+        return;
+      }
+      interval = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          void refresh();
+        }
+      }, 20_000);
+    }
+
+    function stopPolling() {
+      if (!interval) {
+        return;
+      }
+      clearInterval(interval);
+      interval = null;
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refresh();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    }
+
+    void refresh();
+    if (document.visibilityState === "visible") {
+      startPolling();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      stopPolling();
+    };
   }, []);
 
   const runTask = async (taskId: string) => {

@@ -144,17 +144,6 @@ export const DEFAULT_TASK_CONFIGS: WorkerTaskConfig[] = [
     maxConsecutiveFailures: 3,
   },
   {
-    id: "fetch-brightnetwork-jobs",
-    name: "Fetch Bright Network Jobs",
-    enabled: false,
-    minIntervalMs: 6 * 60 * 60 * 1000,
-    dailyLimit: 2,
-    burstWindowMs: 60 * 60 * 1000,
-    burstLimit: 1,
-    cooldownMs: 5 * 60 * 1000,
-    maxConsecutiveFailures: 2,
-  },
-  {
     id: "fetch-linkedin-jobs",
     name: "Fetch LinkedIn Public Jobs",
     enabled: false,
@@ -246,6 +235,18 @@ export const DEFAULT_TASK_CONFIGS: WorkerTaskConfig[] = [
     maxConsecutiveFailures: 2,
     adminOnly: true,
   },
+  {
+    id: "auto-apply-pipeline",
+    name: "Job Discovery Pipeline",
+    enabled: true,
+    minIntervalMs: 5 * 60 * 60 * 1000,
+    dailyLimit: 5,
+    burstWindowMs: 60 * 60 * 1000,
+    burstLimit: 1,
+    cooldownMs: 10 * 60 * 1000,
+    maxConsecutiveFailures: 2,
+    adminOnly: true,
+  },
 ];
 
 /**
@@ -264,7 +265,6 @@ export const FETCH_TASK_SOURCE_MAP: Record<string, string> = {
   "fetch-themuse-jobs": "themuse",
   "fetch-careerjet-jobs": "careerjet",
   "fetch-findwork-jobs": "findwork",
-  "fetch-brightnetwork-jobs": "brightnetwork",
   "fetch-linkedin-jobs": "linkedin",
   "fetch-rapidapi-linkedin-jobs": "rapidapi-linkedin",
   "fetch-indeed-jobs": "indeed",

@@ -23,6 +23,7 @@ export interface ContactStrategyOptions {
   forceEmails?: boolean;
   forceOutreach?: boolean;
   ignoreThresholds?: boolean;
+  writingStyleSamples?: string[];
 }
 
 function defaultEnrichmentConfig(): AppConfig["enrichment"] {
@@ -151,7 +152,9 @@ export async function buildContactStrategy(
   // ---- Outreach strategy ----
   const outreachStrategy =
     (config.autoGenerateOutreach || opts.forceOutreach) && allowOutreach
-      ? await generateOutreachStrategy(parsed, companyIntel, decisionMakers)
+      ? await generateOutreachStrategy(parsed, companyIntel, decisionMakers, {
+          writingStyleSamples: opts.writingStyleSamples,
+        })
       : null;
 
   return { companyIntel, decisionMakers, outreachStrategy };

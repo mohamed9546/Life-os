@@ -216,6 +216,99 @@ export interface EnrichedJob extends Timestamped {
   stageChangedAt?: Timestamp | null;
 }
 
+// --- Auto-apply domain types ---
+
+export type ApplicationAttemptStatus =
+  | "planned"
+  | "applied"
+  | "drafted"
+  | "paused"
+  | "skipped"
+  | "failed";
+
+export type ApplicationBlockerKind =
+  | "login"
+  | "captcha"
+  | "unknown-question"
+  | "missing-profile"
+  | "missing-cv"
+  | "upload"
+  | "red-visa-risk"
+  | "low-fit"
+  | "already-applied"
+  | "unsupported-flow"
+  | "runtime-error";
+
+export interface TargetCompany extends Timestamped {
+  id: string;
+  name: string;
+  category: "pharma" | "biotech" | "medtech" | "cro" | "clinical" | "qa" | "regulatory" | "pv" | "medinfo";
+  countries: string[];
+  careersUrl: string;
+  atsType: "greenhouse" | "lever" | "workday" | "smartrecruiters" | "ashby" | "icims" | "taleo" | "generic";
+  enabled: boolean;
+}
+
+export interface CvLibraryEntry extends Timestamped {
+  id: string;
+  label: string;
+  path: string;
+  roleTracks: RoleTrack[];
+  keywords: string[];
+  active: boolean;
+}
+
+export interface ApplicationProfile extends Timestamped {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  country: string;
+  linkedinUrl: string;
+  rightToWork: string;
+  sponsorship: string;
+  noticePeriod: string;
+  salaryExpectation: string;
+  relocationPreference: string;
+  stockAnswers: Record<string, string>;
+}
+
+export interface ApplicationLog extends Timestamped {
+  id: string;
+  jobId?: string;
+  dedupeKey: string;
+  source: string;
+  company: string;
+  title: string;
+  applyUrl: string;
+  selectedCvId?: string;
+  selectedCvPath?: string;
+  tailoredCvPath?: string | null;
+  status: ApplicationAttemptStatus;
+  blocker?: ApplicationBlockerKind;
+  blockerDetail?: string;
+  fitBand?: PriorityBand;
+  fitScore?: number;
+  browserEvidence?: string;
+  gmailDraftId?: string;
+  attemptedAt: Timestamp;
+}
+
+export interface AutoApplyPipelineResult {
+  fetched: number;
+  imported: number;
+  ranked: number;
+  planned: number;
+  applied: number;
+  drafted: number;
+  paused: number;
+  skipped: number;
+  failed: number;
+  logs: ApplicationLog[];
+}
+
 export interface FollowUpPlan {
   nextAction: string;
   followUpDateSuggestion: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search, Sun, Moon, Sparkles, Cpu, ShieldCheck, Zap } from "lucide-react";
+import { Search, Sun, Moon, Sparkles, Cpu, ShieldCheck, Zap, Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AuthenticatedAppUser } from "@/types";
 import { cn } from "@/lib/utils";
@@ -93,9 +93,46 @@ function useAiStatus(): { status: AiStatus; model: string } {
         setStatus("offline");
       }
     }
-    check();
-    const id = setInterval(check, 60_000);
-    return () => clearInterval(id);
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (interval) {
+        return;
+      }
+      interval = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          void check();
+        }
+      }, 60_000);
+    }
+
+    function stopPolling() {
+      if (!interval) {
+        return;
+      }
+      clearInterval(interval);
+      interval = null;
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void check();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    }
+
+    void check();
+    if (document.visibilityState === "visible") {
+      startPolling();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      stopPolling();
+    };
   }, []);
 
   return { status, model };
@@ -134,13 +171,25 @@ export function TopBar({ user }: { user: AuthenticatedAppUser }) {
     window.dispatchEvent(new CustomEvent("open-command-palette"));
   }
 
+  function openMobileNav() {
+    window.dispatchEvent(new CustomEvent("open-mobile-nav"));
+  }
+
   return (
     <header
-      className="fixed right-0 top-0 z-40"
+      className="app-topbar fixed right-0 top-0 z-40"
       style={{ left: "var(--sidebar-current-width, var(--sidebar-width))" }}
     >
       <div className="px-4 pt-4 sm:px-6 lg:px-8">
         <div className="mx-auto flex w-full max-w-[1440px] items-center gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.85)_0%,rgba(9,13,22,0.8)_100%)] px-4 py-3 shadow-[0_18px_40px_rgba(2,6,23,0.3)] backdrop-blur-xl">
+          <button
+            onClick={openMobileNav}
+            className="btn-icon btn-ghost text-slate-400 hover:bg-white/8 hover:text-white lg:hidden"
+            aria-label="Open navigation"
+          >
+            <Menu size={16} />
+          </button>
+
           <div className="hidden min-w-0 flex-1 md:block">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
               {meta.label}

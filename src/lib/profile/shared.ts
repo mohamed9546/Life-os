@@ -104,31 +104,64 @@ export function getDefaultCandidateProfile(): CandidateProfileSeed {
 }
 
 export function normalizeCandidateProfile(
-  input: Partial<CandidateProfileSeed>
+  input: Partial<CandidateProfileSeed> | unknown
 ): CandidateProfileSeed {
   const defaults = getDefaultCandidateProfile();
 
+  // Without this guard, a `null` / string / array `input` would either
+  // throw when reading `input.targetTitles` (null) OR splat string
+  // characters as numeric keys onto the result, both of which surface
+  // as confusing runtime errors in the candidate profile UI.
+  const safeInput: Partial<CandidateProfileSeed> =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Partial<CandidateProfileSeed>)
+      : {};
+
   return {
     ...defaults,
-    ...input,
-    targetTitles: uniqueStrings(input.targetTitles || defaults.targetTitles),
-    targetRoleTracks:
-      (input.targetRoleTracks || defaults.targetRoleTracks) as RoleTrack[],
+    ...safeInput,
+    targetTitles: uniqueStrings(
+      Array.isArray(safeInput.targetTitles) ? safeInput.targetTitles : defaults.targetTitles
+    ),
+    targetRoleTracks: (Array.isArray(safeInput.targetRoleTracks)
+      ? safeInput.targetRoleTracks
+      : defaults.targetRoleTracks) as RoleTrack[],
     locationConstraints: uniqueStrings(
-      input.locationConstraints || defaults.locationConstraints
+      Array.isArray(safeInput.locationConstraints)
+        ? safeInput.locationConstraints
+        : defaults.locationConstraints
     ),
-    strengths: uniqueStrings(input.strengths || defaults.strengths),
+    strengths: uniqueStrings(
+      Array.isArray(safeInput.strengths) ? safeInput.strengths : defaults.strengths
+    ),
     experienceHighlights: uniqueStrings(
-      input.experienceHighlights || defaults.experienceHighlights
+      Array.isArray(safeInput.experienceHighlights)
+        ? safeInput.experienceHighlights
+        : defaults.experienceHighlights
     ),
-    education: uniqueStrings(input.education || defaults.education),
-    sourceCvIds: uniqueStrings(input.sourceCvIds || defaults.sourceCvIds || []),
-    extraction: input.extraction || defaults.extraction,
+    education: uniqueStrings(
+      Array.isArray(safeInput.education) ? safeInput.education : defaults.education
+    ),
+    sourceCvIds: uniqueStrings(
+      Array.isArray(safeInput.sourceCvIds)
+        ? safeInput.sourceCvIds
+        : defaults.sourceCvIds || []
+    ),
+    extraction:
+      safeInput.extraction && typeof safeInput.extraction === "object"
+        ? safeInput.extraction
+        : defaults.extraction,
   };
 }
 
-function uniqueStrings(values: string[]): string[] {
+function uniqueStrings(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
   return Array.from(
-    new Set(values.map((value) => value.trim()).filter(Boolean))
+    new Set(
+      values
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
   );
 }

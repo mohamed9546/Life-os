@@ -18,7 +18,6 @@ export const SOURCE_CATALOG = [
   { id: "lever", label: "Lever", defaultEnabled: true },
   { id: "remotive", label: "Remotive", defaultEnabled: true },
   { id: "himalayas", label: "Himalayas", defaultEnabled: true },
-  { id: "brightnetwork", label: "Bright Network", defaultEnabled: true },
   { id: "linkedin", label: "LinkedIn Public", defaultEnabled: true },
   { id: "rapidapi-linkedin", label: "LinkedIn RapidAPI", defaultEnabled: false },
   { id: "jooble", label: "Jooble", defaultEnabled: true },

@@ -50,7 +50,6 @@ const SOURCE_TOGGLES: Array<{
   { key: "remotive", label: "Remotive", detail: "Remote-first public feed", stack: "extended" },
   { key: "arbeitnow", label: "Arbeitnow", detail: "Remote and Europe-facing public source", stack: "extended" },
   { key: "himalayas", label: "Himalayas", detail: "Remote-first public listings", stack: "extended" },
-  { key: "brightnetwork", label: "Bright Network", detail: "Graduate and early-career opportunities", stack: "extended" },
   { key: "linkedin", label: "LinkedIn public", detail: "Public listing fallback", stack: "extended" },
   { key: "rapidApiLinkedin", label: "LinkedIn RapidAPI", detail: "Provider-limited LinkedIn fallback", stack: "extended" },
   { key: "indeed", label: "Indeed fallback", detail: "Fallback search source", stack: "extended" },
@@ -397,45 +396,78 @@ export function AdminIntegrationsPanel() {
           description="Configuration state and latest execution signal for each source adapter."
         />
         <div className="overflow-hidden rounded-[28px] border border-slate-200">
-          <div className="grid grid-cols-[1.2fr_0.55fr_0.75fr] bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            <span>Source</span>
-            <span>Status</span>
-            <span>Last signal</span>
-          </div>
-          <div className="divide-y divide-slate-200 bg-white">
+          <div className="divide-y divide-slate-200 bg-white md:hidden">
             {(ops?.sources || []).map((source) => (
-              <div
-                key={source.sourceId}
-                className="grid grid-cols-[1.2fr_0.55fr_0.75fr] gap-3 px-4 py-4 text-sm"
-              >
+              <div key={source.sourceId} className="space-y-3 px-4 py-4 text-sm">
                 <div>
                   <p className="font-medium text-slate-900">{source.displayName}</p>
                   <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">
                     {source.sourceId}
                   </p>
-                  {source.state?.error ? (
-                    <p className="mt-2 text-xs text-rose-600">{source.state.error}</p>
-                  ) : source.state?.skippedReason ? (
-                    <p className="mt-2 text-xs text-amber-600">{source.state.skippedReason}</p>
-                  ) : null}
                 </div>
-                <div className="flex items-start">
+                <div className="flex flex-wrap items-center gap-2">
                   {source.configured ? (
                     <StatusChip tone="success">Configured</StatusChip>
                   ) : (
                     <StatusChip tone="warning">Missing config</StatusChip>
                   )}
-                </div>
-                <div className="flex flex-col items-start gap-2">
                   <StatusBadge status={source.state?.status || "idle"} />
-                  <span className="text-xs text-slate-500">
-                    {source.state?.lastRun
-                      ? new Date(source.state.lastRun).toLocaleString("en-GB")
-                      : "Never run"}
-                  </span>
                 </div>
+                <p className="text-xs text-slate-500">
+                  {source.state?.lastRun
+                    ? new Date(source.state.lastRun).toLocaleString("en-GB")
+                    : "Never run"}
+                </p>
+                {source.state?.error ? (
+                  <p className="text-xs text-rose-600">{source.state.error}</p>
+                ) : source.state?.skippedReason ? (
+                  <p className="text-xs text-amber-600">{source.state.skippedReason}</p>
+                ) : null}
               </div>
             ))}
+          </div>
+
+          <div className="hidden md:block">
+            <div className="grid grid-cols-[1.2fr_0.55fr_0.75fr] bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+              <span>Source</span>
+              <span>Status</span>
+              <span>Last signal</span>
+            </div>
+            <div className="divide-y divide-slate-200 bg-white">
+              {(ops?.sources || []).map((source) => (
+                <div
+                  key={source.sourceId}
+                  className="grid grid-cols-[1.2fr_0.55fr_0.75fr] gap-3 px-4 py-4 text-sm"
+                >
+                  <div>
+                    <p className="font-medium text-slate-900">{source.displayName}</p>
+                    <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                      {source.sourceId}
+                    </p>
+                    {source.state?.error ? (
+                      <p className="mt-2 text-xs text-rose-600">{source.state.error}</p>
+                    ) : source.state?.skippedReason ? (
+                      <p className="mt-2 text-xs text-amber-600">{source.state.skippedReason}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-start">
+                    {source.configured ? (
+                      <StatusChip tone="success">Configured</StatusChip>
+                    ) : (
+                      <StatusChip tone="warning">Missing config</StatusChip>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-start gap-2">
+                    <StatusBadge status={source.state?.status || "idle"} />
+                    <span className="text-xs text-slate-500">
+                      {source.state?.lastRun
+                        ? new Date(source.state.lastRun).toLocaleString("en-GB")
+                        : "Never run"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

@@ -430,11 +430,11 @@ export async function parseJobPosting(
 
   const validation = validateAIOutput(ParsedJobPostingSchema, result.data);
   if (!validation.valid) {
-    console.warn("[parse-job] Schema validation failed:", validation.error);
-    const patched = patchParsedJob(result.data as unknown as Record<string, unknown>);
+    const fallback = buildDeterministicFallback(rawText, metadata, "schema_validation");
+    const patched = patchParsedJob(result.data, fallback);
     const revalidation = validateAIOutput(ParsedJobPostingSchema, patched);
     if (!revalidation.valid) {
-      const fallback = buildDeterministicFallback(rawText, metadata, "schema_validation");
+      console.warn("[parse-job] Schema validation failed after normalization:", revalidation.error);
       return {
         data: fallback,
         meta: {
@@ -485,22 +485,78 @@ export async function parseJobPosting(
   };
 }
 
-function patchParsedJob(data: Record<string, unknown>): Record<string, unknown> {
+function coerceString(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function coerceNullableString(value: unknown, fallback: string | null): string | null {
+  if (value == null) {
+    return fallback;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : fallback;
+  }
+  return fallback;
+}
+
+function coerceStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function coerceEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T
+): T {
+  return typeof value === "string" && allowed.includes(value as T)
+    ? (value as T)
+    : fallback;
+}
+
+function coerceConfidence(value: unknown, fallback: number): number {
+  return typeof value === "number" && value >= 0 && value <= 1 ? value : fallback;
+}
+
+function patchParsedJob(
+  data: unknown,
+  fallback: ParsedJobPosting
+): Record<string, unknown> {
+  const source = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+
   return {
-    title: data.title || "Unknown",
-    company: data.company || "Unknown",
-    location: data.location || "Unknown",
-    salaryText: data.salaryText ?? null,
-    employmentType: data.employmentType || "unknown",
-    seniority: data.seniority || "unknown",
-    remoteType: data.remoteType || "unknown",
-    roleFamily: data.roleFamily || "other",
-    roleTrack: data.roleTrack || "other",
-    mustHaves: Array.isArray(data.mustHaves) ? data.mustHaves : [],
-    niceToHaves: Array.isArray(data.niceToHaves) ? data.niceToHaves : [],
-    redFlags: Array.isArray(data.redFlags) ? data.redFlags : [],
-    keywords: Array.isArray(data.keywords) ? data.keywords : [],
-    summary: data.summary || "No summary available",
-    confidence: typeof data.confidence === "number" ? data.confidence : 0.3,
+    title: coerceString(source.title, fallback.title),
+    company: coerceString(source.company, fallback.company),
+    location: coerceString(source.location, fallback.location),
+    salaryText: coerceNullableString(source.salaryText, fallback.salaryText),
+    employmentType: coerceEnum(
+      source.employmentType,
+      ["permanent", "contract", "temp", "unknown"],
+      fallback.employmentType
+    ),
+    seniority: coerceString(source.seniority, fallback.seniority),
+    remoteType: coerceEnum(
+      source.remoteType,
+      ["remote", "hybrid", "onsite", "unknown"],
+      fallback.remoteType
+    ),
+    roleFamily: coerceString(source.roleFamily, fallback.roleFamily),
+    roleTrack: coerceEnum(
+      source.roleTrack,
+      ["qa", "regulatory", "pv", "medinfo", "clinical", "other"],
+      fallback.roleTrack
+    ),
+    mustHaves: coerceStringArray(source.mustHaves),
+    niceToHaves: coerceStringArray(source.niceToHaves),
+    redFlags: coerceStringArray(source.redFlags),
+    keywords: coerceStringArray(source.keywords),
+    summary: coerceString(source.summary, fallback.summary),
+    confidence: coerceConfidence(source.confidence, fallback.confidence),
   };
 }

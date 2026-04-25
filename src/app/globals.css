@@ -323,6 +323,26 @@
   }
 }
 
+@media (max-width: 1023px) {
+  .main-content {
+    margin-left: 0 !important;
+  }
+
+  .app-topbar {
+    left: 0 !important;
+  }
+
+  .sidebar-container {
+    width: min(88vw, var(--sidebar-width)) !important;
+    transform: translateX(-100%);
+    box-shadow: 0 24px 60px rgba(2, 6, 23, 0.45);
+  }
+
+  [data-mobile-nav-open="true"] .sidebar-container {
+    transform: translateX(0);
+  }
+}
+
 @keyframes shimmer {
   0% {
     background-position: -200% 0;

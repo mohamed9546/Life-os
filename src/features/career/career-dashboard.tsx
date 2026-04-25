@@ -17,7 +17,13 @@ import {
 import { useJobs } from "@/hooks/use-jobs";
 import { usePipeline, type PipelineApiResult } from "@/hooks/use-pipeline";
 import { useApi } from "@/hooks/use-api";
-import { EnrichedJob, ParsedJobPosting, JobFitEvaluation, AIMetadata } from "@/types";
+import {
+  ApplicationLog,
+  EnrichedJob,
+  ParsedJobPosting,
+  JobFitEvaluation,
+  AIMetadata,
+} from "@/types";
 import {
   Panel,
   StatusChip,
@@ -65,8 +71,49 @@ const TRACK_LABELS: Record<string, string> = {
 export function CareerDashboard() {
   const [section, setSection] = useState<Section>("inbox");
   const [selectedJob, setSelectedJob] = useState<EnrichedJob | null>(null);
+  const [applicationLogs, setApplicationLogs] = useState<ApplicationLog[]>([]);
+  const [recommendationPipelineRunning, setRecommendationPipelineRunning] = useState(false);
+  const [recommendationPipelineError, setRecommendationPipelineError] = useState<string | null>(null);
   const jobs = useJobs();
   const pipeline = usePipeline();
+
+  const refreshApplicationLogs = async () => {
+    try {
+      const response = await fetch("/api/applications/logs");
+      if (!response.ok) return;
+      const data = (await response.json()) as { logs?: ApplicationLog[] };
+      setApplicationLogs(data.logs || []);
+    } catch {
+      // Logs are supportive UI; don't block the main career dashboard.
+    }
+  };
+
+  useEffect(() => {
+    void refreshApplicationLogs();
+  }, []);
+
+  const runRecommendationPipeline = async () => {
+    setRecommendationPipelineRunning(true);
+    setRecommendationPipelineError(null);
+    try {
+      const response = await fetch("/api/jobs/auto-apply-pipeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skipBrowser: true }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Recommendation pipeline failed");
+      }
+      await Promise.all([jobs.refresh(), refreshApplicationLogs()]);
+    } catch (err) {
+      setRecommendationPipelineError(
+        err instanceof Error ? err.message : "Recommendation pipeline failed"
+      );
+    } finally {
+      setRecommendationPipelineRunning(false);
+    }
+  };
 
   // Keep selectedJob in sync when jobs refresh
   useEffect(() => {
@@ -138,6 +185,14 @@ export function CareerDashboard() {
         <PipelineResultBanner result={pipeline.lastResult} />
       )}
 
+      <AutoApplyPanel
+        logs={applicationLogs}
+        running={recommendationPipelineRunning}
+        error={recommendationPipelineError}
+        onRun={() => void runRecommendationPipeline()}
+        onRefresh={() => void refreshApplicationLogs()}
+      />
+
       {/* Section nav */}
       <SysFilterBar
         options={[
@@ -184,7 +239,7 @@ export function CareerDashboard() {
         {/* Detail rail */}
         {hasDetail && (
           <div className="min-w-0">
-            <div className="sticky top-24 space-y-3">
+            <div className="space-y-3 lg:sticky lg:top-24">
               <JobDetailPanel
                 job={selectedJob!}
                 onTrack={jobs.trackJob}
@@ -322,6 +377,198 @@ function PipelineResultBanner({ result }: { result: PipelineApiResult }) {
 // ============================================================
 // SECTION 1 — AI Job Analyst
 // ============================================================
+
+function AutoApplyPanel({
+  logs,
+  running,
+  error,
+  onRun,
+  onRefresh,
+}: {
+  logs: ApplicationLog[];
+  running: boolean;
+  error: string | null;
+  onRun: () => void;
+  onRefresh: () => void;
+}) {
+  const latest = logs[0];
+  const nextRun = latest
+    ? new Date(new Date(latest.attemptedAt).getTime() + 5 * 60 * 60 * 1000)
+    : null;
+  const counts = {
+    planned: logs.filter((log) => log.status === "planned").length,
+    applied: logs.filter((log) => log.status === "applied").length,
+    drafted: logs.filter((log) => log.status === "drafted").length,
+    paused: logs.filter((log) => log.status === "paused").length,
+    failed: logs.filter((log) => log.status === "failed").length,
+  };
+
+  return (
+    <Panel className="space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+            Job Discovery
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-white">
+            Gmail + pharma/CRO recommendation pipeline
+          </h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Runs every 5 hours through the worker. It fetches jobs, ranks fit, chooses a CV, and leaves applications for manual review.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StatusChip tone="success">{counts.planned} planned</StatusChip>
+            <StatusChip tone="neutral">{counts.applied} old applied logs</StatusChip>
+            <StatusChip tone="info">{counts.drafted} drafted</StatusChip>
+            <StatusChip tone="warning">{counts.paused} paused</StatusChip>
+            <StatusChip tone={counts.failed > 0 ? "danger" : "neutral"}>{counts.failed} failed</StatusChip>
+            {nextRun && (
+              <StatusChip tone="neutral">
+                Next approx {nextRun.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </StatusChip>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <a className="btn-secondary" href="/api/gmail/auth/start">
+            Connect Gmail
+          </a>
+          <ActionButton variant="secondary" onClick={onRefresh}>
+            <RefreshCw size={13} />
+            Refresh Logs
+          </ActionButton>
+          <ActionButton variant="primary" onClick={onRun} disabled={running}>
+            <PlayCircle size={14} />
+            {running ? "Running..." : "Run Recommendation Pipeline Now"}
+          </ActionButton>
+        </div>
+      </div>
+      {error && (
+        <AlertBanner tone="danger" title="Recommendation pipeline failed" description={error} />
+      )}
+      <div className="space-y-3 md:hidden">
+        {logs.slice(0, 8).map((log) => (
+          <div key={log.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium text-white">{log.title}</p>
+                <p className="mt-1 text-xs text-slate-500">{log.company}</p>
+              </div>
+              <StatusChip tone={applicationStatusTone(log.status)}>
+                {log.status}
+              </StatusChip>
+            </div>
+            <div className="mt-3 space-y-2 text-xs text-slate-400">
+              <p>
+                <span className="text-slate-500">When:</span>{" "}
+                {new Date(log.attemptedAt).toLocaleString()}
+              </p>
+              <p>
+                <span className="text-slate-500">CV:</span>{" "}
+                {log.selectedCvPath?.split(/[\\/]/).pop() || "-"}
+                {log.tailoredCvPath ? (
+                  <span className="ml-2 text-emerald-300">tailored</span>
+                ) : null}
+              </p>
+              <p>
+                <span className="text-slate-500">Blocker:</span>{" "}
+                {log.blocker || log.blockerDetail || "-"}
+              </p>
+              {log.applyUrl ? (
+                <a
+                  className="inline-flex items-center gap-1 text-blue-300 hover:text-blue-200"
+                  href={log.applyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open apply URL <ExternalLink size={12} />
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ))}
+        {logs.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-6 text-center text-sm text-slate-500">
+            No recommendations logged yet.
+          </div>
+        ) : null}
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b border-white/10 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+            <tr>
+              <th className="py-2 pr-3">When</th>
+              <th className="py-2 pr-3">Job</th>
+              <th className="py-2 pr-3">Status</th>
+              <th className="py-2 pr-3">CV</th>
+              <th className="py-2 pr-3">Blocker</th>
+              <th className="py-2 pr-3">Apply URL</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {logs.slice(0, 8).map((log) => (
+              <tr key={log.id} className="text-slate-300">
+                <td className="py-2 pr-3 text-xs text-slate-500">
+                  {new Date(log.attemptedAt).toLocaleString()}
+                </td>
+                <td className="py-2 pr-3">
+                  <p className="font-medium text-white">{log.title}</p>
+                  <p className="text-xs text-slate-500">{log.company}</p>
+                </td>
+                <td className="py-2 pr-3">
+                  <StatusChip tone={applicationStatusTone(log.status)}>
+                    {log.status}
+                  </StatusChip>
+                </td>
+                <td className="py-2 pr-3 text-xs text-slate-400">
+                  {log.selectedCvPath?.split(/[\\/]/).pop() || "-"}
+                  {log.tailoredCvPath && (
+                    <span className="ml-2 text-emerald-300">tailored</span>
+                  )}
+                </td>
+                <td className="py-2 pr-3 text-xs text-slate-400">
+                  {log.blocker || log.blockerDetail || "-"}
+                </td>
+                <td className="py-2 pr-3">
+                  {log.applyUrl ? (
+                    <a
+                      className="inline-flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200"
+                      href={log.applyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open <ExternalLink size={12} />
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-500">-</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {logs.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-6 text-center text-sm text-slate-500">
+                  No recommendations logged yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function applicationStatusTone(
+  status: ApplicationLog["status"]
+): "neutral" | "success" | "info" | "warning" | "danger" {
+  if (status === "applied") return "success";
+  if (status === "drafted" || status === "planned") return "info";
+  if (status === "paused" || status === "skipped") return "warning";
+  if (status === "failed") return "danger";
+  return "neutral";
+}
 
 interface AnalystState {
   rawText: string;

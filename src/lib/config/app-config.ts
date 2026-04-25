@@ -37,7 +37,7 @@ export function getDefaultAppConfig(): AppConfig {
       themuse: { enabled: true, apiKey: themuseApiKey },
       careerjet: { enabled: true, affid: "" },
       himalayas: { enabled: true },
-      brightnetwork: { enabled: true },
+      brightnetwork: { enabled: false },
       indeed: { enabled: true },
       weworkremotely: { enabled: true },
       guardianjobs: { enabled: true },

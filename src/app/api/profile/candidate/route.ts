@@ -28,14 +28,31 @@ export async function GET() {
   }
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 export async function PUT(request: NextRequest) {
   try {
     await requireAppUser();
     const body = (await request.json()) as {
-      profile?: Record<string, unknown>;
+      profile?: unknown;
       approveDraft?: boolean;
-      draft?: Record<string, unknown>;
+      draft?: unknown;
     };
+
+    if (body.profile !== undefined && !isPlainObject(body.profile)) {
+      return NextResponse.json(
+        { error: "profile must be an object" },
+        { status: 400 }
+      );
+    }
+    if (body.draft !== undefined && !isPlainObject(body.draft)) {
+      return NextResponse.json(
+        { error: "draft must be an object" },
+        { status: 400 }
+      );
+    }
 
     let profile = null;
     let draft = null;

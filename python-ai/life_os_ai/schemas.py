@@ -91,6 +91,51 @@ class AIMetadata(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Candidate profile extraction (mirrors CandidateProfileImportSchema)
+# ---------------------------------------------------------------------------
+
+
+class CandidateProfileExtraction(BaseModel):
+    review_state: Literal["draft", "approved"] = Field(alias="reviewState")
+    confidence: float = Field(ge=0.0, le=1.0)
+    issues: list[str] = Field(default_factory=list)
+    extracted_at: str = Field(alias="extractedAt")
+    source_files: list[str] = Field(default_factory=list, alias="sourceFiles")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CandidateProfileSeed(BaseModel):
+    full_name: str = Field(alias="fullName")
+    headline: str
+    location: str
+    open_to_relocation_uk: bool = Field(alias="openToRelocationUk")
+    summary: str
+    target_titles: list[str] = Field(default_factory=list, alias="targetTitles")
+    target_role_tracks: list[RoleTrack] = Field(default_factory=list, alias="targetRoleTracks")
+    location_constraints: list[str] = Field(default_factory=list, alias="locationConstraints")
+    transition_narrative: str = Field(alias="transitionNarrative")
+    strengths: list[str] = Field(default_factory=list)
+    experience_highlights: list[str] = Field(default_factory=list, alias="experienceHighlights")
+    education: list[str] = Field(default_factory=list)
+    source_cv_ids: list[str] = Field(default_factory=list, alias="sourceCvIds")
+    extraction: CandidateProfileExtraction | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CandidateProfileImportDraft(BaseModel):
+    raw_text: str = Field(alias="rawText")
+    profile: CandidateProfileSeed
+    confidence: float = Field(ge=0.0, le=1.0)
+    issues: list[str] = Field(default_factory=list)
+    source_files: list[str] = Field(default_factory=list, alias="sourceFiles")
+    extracted_at: str = Field(alias="extractedAt")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# ---------------------------------------------------------------------------
 # API request / response shapes
 # ---------------------------------------------------------------------------
 
@@ -120,4 +165,49 @@ class EvaluateJobResponse(BaseModel):
     success: bool
     data: JobFitEvaluation | None = None
     meta: AIMetadata | None = None
+    error: str | None = None
+
+
+class ExtractCandidateProfileRequest(BaseModel):
+    raw_text: str = Field(alias="rawText")
+    source_files: list[str] = Field(default_factory=list, alias="sourceFiles")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ExtractCandidateProfileResponse(BaseModel):
+    success: bool
+    data: CandidateProfileImportDraft | None = None
+    meta: AIMetadata | None = None
+    error: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ParseJobAlertEmailRequest(BaseModel):
+    raw_text: str = Field(alias="rawText")
+    source: str = "gmail"
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SelectCvForJobRequest(BaseModel):
+    job: dict
+
+
+class PlanCvKeywordsRequest(BaseModel):
+    job: dict
+    allowed_keywords: list[str] = Field(default_factory=list, alias="allowedKeywords")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PlanApplicationAnswersRequest(BaseModel):
+    job: dict
+    profile: dict
+
+
+class GenericApplicationPlanningResponse(BaseModel):
+    success: bool
+    data: dict | list[dict] | None = None
     error: str | None = None

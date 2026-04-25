@@ -35,9 +35,11 @@ Always respond with valid JSON only.`;
 export async function generateOutreachStrategy(
   job: ParsedJobPosting,
   companyIntel: CompanyIntel | null,
-  decisionMakers: DecisionMaker[]
+  decisionMakers: DecisionMaker[],
+  options?: { writingStyleSamples?: string[] }
 ): Promise<OutreachStrategy | null> {
   const userProfileBlock = await loadUserProfilePromptBlock();
+  const styleSamples = options?.writingStyleSamples?.filter(Boolean).slice(0, 6) || [];
   const contactsBlock =
     decisionMakers.length > 0
       ? `
@@ -75,6 +77,19 @@ ${userProfileBlock}
 
 ${companyBlock}
 ${contactsBlock}
+
+WRITING STYLE FROM THE USER'S SENT EMAILS:
+${
+  styleSamples.length > 0
+    ? styleSamples.map((sample, index) => `Sample ${index + 1}:\n${sample}`).join("\n\n")
+    : "No sent-message style samples available. Use a concise, polite, natural style."
+}
+
+Style rules:
+- Use the samples only to infer tone, length, greeting style, and sign-off style.
+- Do not copy private details, names, old topics, dates, or unrelated claims from the samples.
+- Match the profession and role track: ${job.roleTrack}; make the outreach relevant to ${job.title}.
+- Keep cold email short, human, and specific; do not sound automated or spammy.
 
 Return exactly this JSON structure:
 {

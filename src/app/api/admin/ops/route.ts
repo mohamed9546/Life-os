@@ -5,6 +5,7 @@ import { getAIUsageStats, loadAIConfig } from "@/lib/ai";
 import { checkApolloHealth } from "@/lib/enrichment";
 import { getAdapterConfigStatus } from "@/lib/jobs/sources";
 import {
+  buildDisplayTaskState,
   checkTaskPolicy,
   getAllTaskConfigs,
   getAllTaskStates,
@@ -32,11 +33,12 @@ export async function GET() {
 
     const tasks = taskConfigs.map((config) => {
       const state = taskStates.find((candidate) => candidate.taskId === config.id);
-      const policy = state ? checkTaskPolicy(config, state) : { allowed: true };
+      const displayState = buildDisplayTaskState(config, state);
+      const policy = checkTaskPolicy(config, displayState);
 
       return {
         ...config,
-        state,
+        state: displayState,
         policyAllowed: policy.allowed,
         policyReason: policy.reason,
         recentRun:
@@ -52,12 +54,16 @@ export async function GET() {
       tasks,
       sources: sources.map((source) => {
         const taskId = getFetchTaskIdForSource(source.sourceId);
+        const config = taskId
+          ? taskConfigs.find((candidate) => candidate.id === taskId) || null
+          : null;
+        const state = taskId
+          ? taskStates.find((candidate) => candidate.taskId === taskId) || null
+          : null;
         return {
           ...source,
           taskId,
-          state: taskId
-            ? taskStates.find((candidate) => candidate.taskId === taskId) || null
-            : null,
+          state: config ? buildDisplayTaskState(config, state) : state,
           recentRun: taskId
             ? recentRuns.find((run) => run.taskId === taskId) || null
             : null,

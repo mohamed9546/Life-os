@@ -4,6 +4,7 @@ Endpoints:
   GET  /health           -> liveness + provider config
   POST /parse-job        -> { rawText, metadata? } -> { success, data, meta, error }
   POST /evaluate-job     -> { job, profile? } -> { success, data, meta, error }
+  POST /extract-candidate-profile -> { rawText, sourceFiles } -> profile draft
 
 The service is intentionally stateless -- profiles either come inline in
 the request body (preferred, TS owns the profile store) or are loaded
@@ -29,10 +30,24 @@ from .profile import load_profile
 from .schemas import (
     EvaluateJobRequest,
     EvaluateJobResponse,
+    ExtractCandidateProfileRequest,
+    ExtractCandidateProfileResponse,
+    GenericApplicationPlanningResponse,
+    ParseJobAlertEmailRequest,
+    PlanApplicationAnswersRequest,
+    PlanCvKeywordsRequest,
     ParseJobRequest,
     ParseJobResponse,
+    SelectCvForJobRequest,
+)
+from .tasks.applications import (
+    parse_job_alert_email,
+    plan_application_answers,
+    plan_cv_keywords,
+    select_cv_for_job,
 )
 from .tasks.evaluate_job import evaluate_job
+from .tasks.extract_candidate_profile import extract_candidate_profile
 from .tasks.parse_job import parse_job
 
 logging.basicConfig(
@@ -127,6 +142,60 @@ def evaluate_job_endpoint(req: EvaluateJobRequest) -> EvaluateJobResponse:
         return EvaluateJobResponse(success=False, error=str(exc))
 
     return EvaluateJobResponse(success=True, data=evaluation, meta=meta)
+
+
+@app.post("/extract-candidate-profile", response_model=ExtractCandidateProfileResponse)
+def extract_candidate_profile_endpoint(
+    req: ExtractCandidateProfileRequest,
+) -> ExtractCandidateProfileResponse:
+    raw = req.raw_text.strip()
+    if len(raw) < 20:
+        raise HTTPException(status_code=400, detail="rawText must be at least 20 characters")
+
+    try:
+        draft, meta = extract_candidate_profile(raw, req.source_files)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("extract-candidate-profile handler crashed")
+        return ExtractCandidateProfileResponse(success=False, error=str(exc))
+
+    return ExtractCandidateProfileResponse(success=True, data=draft, meta=meta)
+
+
+@app.post("/parse-job-alert-email", response_model=GenericApplicationPlanningResponse)
+def parse_job_alert_email_endpoint(
+    req: ParseJobAlertEmailRequest,
+) -> GenericApplicationPlanningResponse:
+    return GenericApplicationPlanningResponse(
+        success=True,
+        data=parse_job_alert_email(req.raw_text, req.source),
+    )
+
+
+@app.post("/select-cv-for-job", response_model=GenericApplicationPlanningResponse)
+def select_cv_for_job_endpoint(
+    req: SelectCvForJobRequest,
+) -> GenericApplicationPlanningResponse:
+    return GenericApplicationPlanningResponse(success=True, data=select_cv_for_job(req.job))
+
+
+@app.post("/plan-cv-keywords", response_model=GenericApplicationPlanningResponse)
+def plan_cv_keywords_endpoint(
+    req: PlanCvKeywordsRequest,
+) -> GenericApplicationPlanningResponse:
+    return GenericApplicationPlanningResponse(
+        success=True,
+        data=plan_cv_keywords(req.job, req.allowed_keywords),
+    )
+
+
+@app.post("/plan-application-answers", response_model=GenericApplicationPlanningResponse)
+def plan_application_answers_endpoint(
+    req: PlanApplicationAnswersRequest,
+) -> GenericApplicationPlanningResponse:
+    return GenericApplicationPlanningResponse(
+        success=True,
+        data=plan_application_answers(req.job, req.profile),
+    )
 
 
 # ---------------------------------------------------------------------------

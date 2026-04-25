@@ -6,6 +6,7 @@ Otherwise the tests are skipped so CI without secrets doesn't fail.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -19,6 +20,7 @@ from life_os_ai.llm import (
 )
 from life_os_ai.profile import DEFAULT_LIFE_OS_PROFILE, CandidateProfile
 from life_os_ai.tasks.evaluate_job import evaluate_job
+from life_os_ai.tasks.extract_candidate_profile import extract_candidate_profile
 from life_os_ai.tasks.parse_job import parse_job
 
 
@@ -102,6 +104,78 @@ def test_heuristic_evaluation_returns_sane_bands():
         assert meta.model == "heuristic"
     finally:
         _restore_env(saved)
+
+
+def test_candidate_profile_fallback_without_llm():
+    """Candidate profile extraction should still return a reviewable draft without an LLM."""
+    saved = _clear_provider_env()
+    try:
+        draft, meta = extract_candidate_profile(
+            "Mohamed Abdalla\n"
+            "Clinical Research | CTA | Junior CRA | Trial Coordination\n"
+            "Glasgow, UK\n"
+            "MSc Clinical Pharmacology\n"
+            "GCP training and clinical research internship experience.",
+            ["Mohamed_Abdalla_CV_CRA.pdf"],
+        )
+        assert draft.profile.full_name == "Mohamed Abdalla"
+        assert "clinical" in draft.profile.target_role_tracks
+        assert draft.confidence == 0.35
+        assert meta.fallback_used is True
+    finally:
+        _restore_env(saved)
+
+
+def test_candidate_profile_repairs_pipe_delimited_role_tracks(monkeypatch):
+    """The Python extractor repairs the exact bad enum shape local models emit."""
+    from life_os_ai.tasks import extract_candidate_profile as module
+
+    class FakeResult:
+        success = True
+        text = json.dumps(
+            {
+                "rawText": "Mohamed Abdalla",
+                "profile": {
+                    "fullName": "Mohamed Abdalla",
+                    "headline": "Clinical Research",
+                    "location": "Glasgow, UK",
+                    "openToRelocationUk": True,
+                    "summary": "Clinical research candidate.",
+                    "targetTitles": ["Junior CRA"],
+                    "targetRoleTracks": [
+                        "clinical | regulatory | pv | medinfo | clinical | other"
+                    ],
+                    "locationConstraints": ["UK"],
+                    "transitionNarrative": "Transitioning into clinical research.",
+                    "strengths": ["GCP"],
+                    "experienceHighlights": ["Clinical research internship"],
+                    "education": ["MSc Clinical Pharmacology"],
+                    "sourceCvIds": ["cv.pdf"],
+                },
+                "confidence": 0.82,
+                "issues": [],
+                "sourceFiles": ["cv.pdf"],
+                "extractedAt": "2026-04-25T00:00:00Z",
+            }
+        )
+        error = None
+        model = "fake"
+        duration_ms = 12
+        fallback_used = False
+        failure_kind = None
+
+    monkeypatch.setattr(module, "chat", lambda **_: FakeResult())
+
+    draft, meta = extract_candidate_profile("Mohamed Abdalla\nClinical Research", ["cv.pdf"])
+    assert draft.confidence == 0.82
+    assert draft.profile.target_role_tracks == [
+        "clinical",
+        "regulatory",
+        "pv",
+        "medinfo",
+        "other",
+    ]
+    assert meta.model == "fake"
 
 
 def test_gemini_json_truncation_retries_native(monkeypatch):

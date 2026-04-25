@@ -13,6 +13,7 @@ export {
   getAllTaskConfigs,
   updateTaskConfig,
   getAllTaskStates,
+  buildDisplayTaskState,
   resetTaskState,
   checkTaskPolicy,
 } from "./task-runner";

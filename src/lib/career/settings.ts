@@ -115,6 +115,48 @@ function normalizeSettingsBundle(
   };
 }
 
+function mergeSavedSearchesWithDefaults(
+  existing: SavedSearch[],
+  userId: string
+): SavedSearch[] {
+  const normalizedExisting = existing.map((search, index) =>
+    normalizeSearch(search, userId, index)
+  );
+  const defaults = createDefaultSavedSearches(userId);
+
+  if (normalizedExisting.length === 0) {
+    return defaults;
+  }
+
+  const existingIds = new Set(normalizedExisting.map((search) => search.id));
+  const missingDefaults = defaults.filter((search) => !existingIds.has(search.id));
+  return [...normalizedExisting, ...missingDefaults];
+}
+
+function mergeSourcePreferencesWithDefaults(
+  existing: SourcePreference[],
+  userId: string
+): SourcePreference[] {
+  const normalizedExisting = existing
+    .map((source, index) => normalizeSourcePreference(source, userId, index))
+    .filter((source) =>
+      SOURCE_CATALOG.some((catalogSource) => catalogSource.id === source.sourceId)
+    );
+  const defaults = createDefaultSourcePreferences(userId);
+
+  if (normalizedExisting.length === 0) {
+    return defaults;
+  }
+
+  const existingSourceIds = new Set(
+    normalizedExisting.map((source) => source.sourceId)
+  );
+  const missingDefaults = defaults.filter(
+    (source) => !existingSourceIds.has(source.sourceId)
+  );
+  return [...normalizedExisting, ...missingDefaults];
+}
+
 async function loadFallbackSettings(userId: string, email: string) {
   const [profile, savedSearches, sourcePreferences] = await Promise.all([
     loadFallbackProfile(userId, email),
@@ -136,29 +178,13 @@ async function loadFallbackProfile(userId: string, email: string) {
     return normalizeProfile(existing, userId, email);
   }
 
-  const created = createDefaultCareerProfile(userId, email);
-  profiles.push(created);
-  await writeCollection(Collections.CAREER_PROFILES, profiles);
-  return created;
+  return createDefaultCareerProfile(userId, email);
 }
 
 async function loadFallbackSavedSearches(userId: string) {
   const searches = await readCollection<SavedSearch>(Collections.SAVED_SEARCHES);
   const existing = searches.filter((search) => search.userId === userId);
-  const defaults = createDefaultSavedSearches(userId);
-  if (existing.length > 0) {
-    const existingIds = new Set(existing.map((search) => search.id));
-    const missing = defaults.filter((search) => !existingIds.has(search.id));
-    if (missing.length > 0) {
-      await writeCollection(Collections.SAVED_SEARCHES, [...searches, ...missing]);
-      return [...existing, ...missing];
-    }
-    return existing;
-  }
-
-  const created = defaults;
-  await writeCollection(Collections.SAVED_SEARCHES, [...searches, ...created]);
-  return created;
+  return mergeSavedSearchesWithDefaults(existing, userId);
 }
 
 async function loadFallbackSourcePreferences(userId: string) {
@@ -166,22 +192,7 @@ async function loadFallbackSourcePreferences(userId: string) {
     Collections.SOURCE_PREFERENCES
   );
   const existing = sources.filter((source) => source.userId === userId);
-  const defaults = createDefaultSourcePreferences(userId);
-  if (existing.length > 0) {
-    const existingSourceIds = new Set(existing.map((source) => source.sourceId));
-    const missing = defaults.filter((source) => !existingSourceIds.has(source.sourceId));
-    if (missing.length > 0) {
-      await writeCollection(Collections.SOURCE_PREFERENCES, [...sources, ...missing]);
-      return [...existing, ...missing];
-    }
-    return existing.filter((source) =>
-      SOURCE_CATALOG.some((catalogSource) => catalogSource.id === source.sourceId)
-    );
-  }
-
-  const created = defaults;
-  await writeCollection(Collections.SOURCE_PREFERENCES, [...sources, ...created]);
-  return created;
+  return mergeSourcePreferencesWithDefaults(existing, userId);
 }
 
 async function writeFallbackProfile(profile: CareerProfile) {
@@ -248,49 +259,16 @@ export async function getUserSettings(
     if (sourceResult.error) throw sourceResult.error;
 
     const profile =
-      mapProfileFromDb(profileResult.data) ||
-      (await writeDbProfile(createDefaultCareerProfile(userId, email)));
+      mapProfileFromDb(profileResult.data) || createDefaultCareerProfile(userId, email);
 
-    let savedSearches = (searchResult.data || []).map(mapSearchFromDb);
-    let sourcePreferences = (sourceResult.data || []).map(mapSourceFromDb);
-
-    if (savedSearches.length === 0) {
-      savedSearches = await replaceSavedSearches(
-        userId,
-        createDefaultSavedSearches(userId)
-      );
-    } else {
-      const existingIds = new Set(savedSearches.map((search) => search.id));
-      const missing = createDefaultSavedSearches(userId).filter(
-        (search) => !existingIds.has(search.id)
-      );
-      if (missing.length > 0) {
-        savedSearches = await replaceSavedSearches(userId, [
-          ...savedSearches,
-          ...missing,
-        ]);
-      }
-    }
-
-    if (sourcePreferences.length === 0) {
-      sourcePreferences = await replaceSourcePreferences(
-        userId,
-        createDefaultSourcePreferences(userId)
-      );
-    } else {
-      const existingSourceIds = new Set(
-        sourcePreferences.map((source) => source.sourceId)
-      );
-      const missing = createDefaultSourcePreferences(userId).filter(
-        (source) => !existingSourceIds.has(source.sourceId)
-      );
-      if (missing.length > 0) {
-        sourcePreferences = await replaceSourcePreferences(userId, [
-          ...sourcePreferences,
-          ...missing,
-        ]);
-      }
-    }
+    const savedSearches = mergeSavedSearchesWithDefaults(
+      (searchResult.data || []).map(mapSearchFromDb),
+      userId
+    );
+    const sourcePreferences = mergeSourcePreferencesWithDefaults(
+      (sourceResult.data || []).map(mapSourceFromDb),
+      userId
+    );
 
     return normalizeSettingsBundle(
       { profile, savedSearches, sourcePreferences },

@@ -6,8 +6,9 @@ Stateless. Ported from `src/lib/ai/tasks/` so the two implementations
 can run side-by-side during migration via the `USE_PYTHON_AI` feature
 flag on the TS side.
 
-Status: **v0.1** -- parse-job + evaluate-job ported. Everything else
-still lives in TypeScript.
+Status: **v0.2** -- parse-job, evaluate-job, and candidate-profile
+extraction ported. More application packet / auto-fill logic can move
+here next.
 
 ## Endpoints
 
@@ -16,6 +17,7 @@ still lives in TypeScript.
 | `GET  /health`      | Liveness + which providers are configured    |
 | `POST /parse-job`   | `{rawText, metadata?}` -> `{success, data, meta}` |
 | `POST /evaluate-job`| `{job, profile?}` -> `{success, data, meta}`   |
+| `POST /extract-candidate-profile` | `{rawText, sourceFiles}` -> `{success, data, meta}` |
 
 Request / response shapes mirror the TS versions exactly -- see
 `life_os_ai/schemas.py`. A TS client that already hits
@@ -69,6 +71,11 @@ curl -s -X POST http://127.0.0.1:8000/parse-job \
 curl -s -X POST http://127.0.0.1:8000/evaluate-job \
   -H "Content-Type: application/json" \
   -d '{"job":{"title":"Clinical Trial Assistant","company":"Iqvia","location":"Glasgow","salaryText":null,"employmentType":"permanent","seniority":"entry","remoteType":"hybrid","roleFamily":"Clinical Operations","roleTrack":"clinical","mustHaves":["GCP awareness"],"niceToHaves":[],"redFlags":[],"keywords":["tmf","gcp"],"summary":"Entry-level CTA supporting TMF maintenance.","confidence":0.8}}' | jq
+
+# Extract a candidate profile draft from CV text
+curl -s -X POST http://127.0.0.1:8000/extract-candidate-profile \
+  -H "Content-Type: application/json" \
+  -d '{"rawText":"Mohamed Abdalla\nClinical Research | CTA | Junior CRA\nGlasgow, UK\nMSc Clinical Pharmacology\nGCP training","sourceFiles":["cv.pdf"]}' | jq
 ```
 
 ## Wiring into the TS app

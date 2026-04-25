@@ -311,12 +311,30 @@ function mergeTaskSettings(
   return merged;
 }
 
+// Process-level latch so we only log the gemini->ollama override warning
+// once per Next.js dev/prod boot instead of on every config load.
+let warnedGeminiOverride = false;
+
 function applyEnvOverrides(config: AIConfig): AIConfig {
   if (isLocalOnlyMode()) {
-    const model = process.env.OLLAMA_MODEL || LOCAL_OLLAMA_MODEL;
+    const model = (process.env.OLLAMA_MODEL || LOCAL_OLLAMA_MODEL).trim();
     const baseUrl = normalizeBaseUrl(
       process.env.OLLAMA_BASE_URL || config.baseUrl || LOCAL_OLLAMA_BASE_URL
     );
+
+    // If a stored config from a previous (cloud) boot is still on disk
+    // with provider/compat=gemini, surface the override in the dev log
+    // exactly once so the regression is visible if it ever recurs.
+    const storedNonOllama =
+      config.provider !== "ollama" || config.compatibilityMode !== "ollama";
+    if (storedNonOllama && !warnedGeminiOverride) {
+      warnedGeminiOverride = true;
+      console.warn(
+        `[ai/config] LIFE_OS_LOCAL_ONLY=true: overriding stored provider=${config.provider}, ` +
+          `compatibilityMode=${config.compatibilityMode} -> ollama. ` +
+          `Resave the config from Settings to clear this warning.`
+      );
+    }
 
     return {
       ...config,
@@ -331,10 +349,14 @@ function applyEnvOverrides(config: AIConfig): AIConfig {
       taskSettings: Object.fromEntries(
         AI_TASK_ORDER.map((taskType) => {
           const task = config.taskSettings[taskType];
-          const timeoutMs =
+          const configuredTimeoutMs =
             typeof task.timeoutMs === "number" && task.timeoutMs > 0
               ? Math.min(task.timeoutMs, 120_000)
-              : DEFAULT_AI_CONFIG.taskSettings[taskType].timeoutMs;
+              : DEFAULT_AI_CONFIG.taskSettings[taskType].timeoutMs ?? config.timeoutMs;
+          const timeoutMs =
+            taskType === "extract-candidate-profile"
+              ? Math.max(configuredTimeoutMs, 120_000)
+              : configuredTimeoutMs;
           return [
             taskType,
             {

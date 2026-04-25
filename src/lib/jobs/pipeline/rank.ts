@@ -164,7 +164,6 @@ function computeSortScore(job: EnrichedJob): number {
     themuse: 2,
     findwork: 2,
     jooble: 1,
-    brightnetwork: 1,
     arbeitnow: 1,
     careerjet: 1,
     indeed: 0,

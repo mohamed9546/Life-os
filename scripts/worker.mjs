@@ -15,6 +15,7 @@ import { resolve } from "node:path";
 
 const args = process.argv.slice(2);
 const isOnce = args.includes("--once");
+const allowContinuousDev = args.includes("--allow-continuous-dev");
 const taskFilter = args
   .filter((a) => a.startsWith("--task="))
   .map((a) => a.replace("--task=", ""));
@@ -33,6 +34,22 @@ console.log("");
 // ---- we call the worker API endpoint instead.           ----
 
 const BASE_URL = process.env.WORKER_API_URL || "http://localhost:3000";
+
+function truthy(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function isLocalBaseUrl(url) {
+  return url.includes("localhost") || url.includes("127.0.0.1");
+}
+
+if (!isOnce && isLocalBaseUrl(BASE_URL) && !allowContinuousDev && !truthy(process.env.WORKER_ALLOW_CONTINUOUS_DEV)) {
+  console.error("[worker] Refusing continuous mode against a local dev server by default.");
+  console.error("[worker] This avoids background task churn while you browse the app.");
+  console.error("[worker] Use `npm run worker:once`, or rerun with `node scripts/worker.mjs --allow-continuous-dev`,");
+  console.error("[worker] or set WORKER_ALLOW_CONTINUOUS_DEV=true if you really want continuous local runs.");
+  process.exit(1);
+}
 
 async function callApi(path, method = "GET", body = null) {
   const options = {
