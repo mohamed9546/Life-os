@@ -15,11 +15,11 @@ import { JobFitEvaluationSchema, validateAIOutput } from "../schemas";
 import { loadUserProfilePromptBlock } from "../user-profile";
 import { evaluateRawJobRelevance } from "@/lib/jobs/pipeline/relevance";
 
-const SYSTEM_PROMPT = `You are a career strategy AI specialising in entry-level UK life sciences, clinical operations, QA, regulatory, pharmacovigilance, and medical information transitions.
+const SYSTEM_PROMPT = `You are a career strategy AI specialising in entry-level UK life sciences, clinical operations, QA, regulatory, and medical information transitions.
 Treat the candidate as entry/support-level, not senior. They have MSc Clinical Pharmacology, GCP training, clinical research internship exposure, regulated healthcare documentation experience, SOP/compliance-heavy workflow exposure, and governance/controlled-document exposure.
 Strong-fit work includes regulated documentation, clinical trial support, study coordination, SOP/compliance-heavy admin, healthcare administration, research governance, and regulated support functions.
 Primary target titles: Clinical Trial Assistant, Clinical Research Coordinator, Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, Study Start-Up Assistant/Coordinator, Site Activation Assistant/Coordinator, Trial Administrator, Clinical Project Assistant, In-House CRA, and Junior CRA only if clearly junior/entry-level.
-Secondary target titles: QA Associate, Quality Systems Associate, Document Control Associate, Regulatory Affairs Assistant, Regulatory Operations Assistant, Pharmacovigilance Associate, Drug Safety Associate, Medical Information Associate, Research Governance, and Research Support.
+Secondary target titles: QA Associate, Quality Systems Associate, Document Control Associate, Regulatory Affairs Assistant, Regulatory Operations Assistant, Medical Information Associate, Research Governance, and Research Support.
 Severely penalise tax/accounting/payroll/finance operations, legal assistant roles, wet-lab execution, field sales/territory roles, GPhC-essential roles, community-pharmacy-only roles, and senior/leadership roles.
 Always respond with valid JSON matching the exact schema requested.
 Be realistic and strategic — never flattering. This candidate has transferable skills but needs stepping-stone roles, not stretch goals.`;
@@ -69,7 +69,7 @@ ACTION RECOMMENDATION LOGIC:
 - skip = weak fit, irrelevant family, or strong visa/seniority mismatch
 
 SCORING GUIDE:
-- fitScore 70-100: Strong match for CTA, clinical operations, QA, regulatory, PV, or medinfo transition goals
+- fitScore 70-100: Strong match for CTA, clinical operations, QA, regulatory, or medinfo transition goals
 - fitScore 40-69: Moderate match, worth considering if interviewability and strategic value are still credible
 - fitScore 20-39: Weak match, only if nothing better
 - fitScore 0-19: Poor match, likely reject
@@ -80,7 +80,7 @@ SCORING GUIDE:
 
 SCORING RULES — REWARDS (apply to fitScore):
 - Primary target role: Clinical Trial Assistant, Clinical Research Coordinator, Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, Study Start-Up, Site Activation, Trial Administrator, Clinical Project Assistant, In-House CRA, or clearly junior CRA: +25
-- Secondary target role: QA Associate, Quality Systems Associate, Document Control, Regulatory Affairs/Operations Assistant, Pharmacovigilance/Drug Safety Associate, Medical Information Associate, Research Governance, or Research Support: +18
+- Secondary target role: QA Associate, Quality Systems Associate, Document Control, Regulatory Affairs/Operations Assistant, Medical Information Associate, Research Governance, or Research Support: +18
 - Role explicitly values ICH-GCP, GCP, TMF/eTMF, ISF, essential documents, CTMS, SOP, protocol compliance, submissions support, filing/archiving, audit readiness, governance, or clinical documentation: +15
 - Entry/junior/assistant/coordinator/support/administrator seniority that does not require prior industry experience: +12
 - Glasgow, Scotland, UK remote/hybrid, or strong London hybrid fit: +5
@@ -112,7 +112,7 @@ type AITaskErrorResult = {
 // ---- Heuristic fallback (no AI required) ----
 
 const TRACK_BASE_SCORES: Record<string, number> = {
-  qa: 65, regulatory: 70, pv: 68, clinical: 72, medinfo: 65, other: 22,
+  qa: 65, regulatory: 70, pv: 20, clinical: 72, medinfo: 65, other: 22,
 };
 
 const TRACK_LABELS: Record<string, string> = {

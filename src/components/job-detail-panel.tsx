@@ -387,6 +387,14 @@ export function JobDetailPanel({
                 key={person.id}
                 className="rounded-lg bg-surface-2 px-3 py-2 text-xs"
               >
+                {person.id.startsWith("fallback-") && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="badge-neutral">Suggested contact role</span>
+                    <span className="text-2xs text-text-tertiary">
+                      Fallback guidance because live people search is unavailable
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium text-text-primary">{person.fullName}</p>

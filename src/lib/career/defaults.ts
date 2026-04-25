@@ -38,7 +38,6 @@ export const DEFAULT_TARGET_ROLE_TRACKS: RoleTrack[] = [
   "clinical",
   "qa",
   "regulatory",
-  "pv",
   "medinfo",
 ];
 
@@ -120,18 +119,6 @@ export function createDefaultSavedSearches(userId: string): SavedSearch[] {
       keywords: ["medical device regulatory", "ISO 13485", "CE marking"],
       location: "United Kingdom",
       remoteOnly: true,
-      radius: 0,
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: `${userId}-pv`,
-      userId,
-      label: "Drug safety / PV",
-      keywords: ["pharmacovigilance", "drug safety", "case processing"],
-      location: "United Kingdom",
-      remoteOnly: false,
       radius: 0,
       enabled: true,
       createdAt: now,
@@ -229,7 +216,7 @@ export function createDefaultSavedSearches(userId: string): SavedSearch[] {
       id: `${userId}-egypt-clinical`,
       userId,
       label: "Egypt clinical / regulatory support",
-      keywords: ["clinical trial assistant", "regulatory affairs assistant", "pharmacovigilance associate"],
+      keywords: ["clinical trial assistant", "regulatory affairs assistant"],
       location: "Egypt",
       remoteOnly: false,
       radius: 0,
@@ -294,7 +281,6 @@ export function normalizeRoleTracks(values: string[]): RoleTrack[] {
   const allowed = new Set<RoleTrack>([
     "qa",
     "regulatory",
-    "pv",
     "medinfo",
     "clinical",
     "other",

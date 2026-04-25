@@ -51,8 +51,6 @@ const SECONDARY_TITLE_TERMS = [
   "document control associate",
   "regulatory affairs assistant",
   "regulatory operations assistant",
-  "pharmacovigilance associate",
-  "drug safety associate",
   "medical information associate",
   "research governance",
   "research support",
@@ -151,6 +149,9 @@ const OTHER_HARD_NEGATIVES = [
   "dental sales",
   "insurance",
   "claims handler",
+  "solar pv",
+  "photovoltaic",
+  "solar engineer",
   "care assistant",
   "health care assistant",
   "healthcare assistant",
@@ -268,6 +269,11 @@ function evaluateTextRelevance(text: string): RelevanceGateResult {
   } else if (secondaryMatches.length > 0) {
     bonus += 30;
     reasons.push(`Secondary target title: ${secondaryMatches[0]}.`);
+  }
+
+  if (roleFamily === "pv") {
+    penalty += 20;
+    reasons.push("PV roles are no longer a preferred target path.");
   }
 
   bonus += Math.min(positiveMatches.length * 5, 35);

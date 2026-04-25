@@ -3,7 +3,6 @@
 // Apollo is optional — callers must handle all non-"ok" result states gracefully.
 
 import type { CompanyIntel, DecisionMaker, AppConfig } from "@/types";
-import { readObject, ConfigFiles } from "@/lib/storage";
 import { TtlCache } from "../cache";
 import { CallBudget } from "../budget";
 import type {
@@ -12,6 +11,7 @@ import type {
   RoleContext,
   ProviderHealth,
 } from "./types";
+import { getAppConfig } from "@/lib/config/app-config";
 
 // ---- Cache TTLs ----
 
@@ -39,7 +39,7 @@ const budget = new CallBudget(250, {
 // ---- Config ----
 
 async function getApolloKey(): Promise<string | null> {
-  const config = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+  const config = await getAppConfig();
   if (!config?.enrichment?.apollo?.enabled || !config.enrichment.apollo.apiKey) {
     return null;
   }

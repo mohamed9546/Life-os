@@ -12,11 +12,11 @@ import {
 
 const DEFAULT_PROFILE = {
   targetLocations: ["Glasgow", "Scotland", "United Kingdom"],
-  targetRoleTracks: ["qa", "regulatory", "pv", "medinfo", "clinical"],
+  targetRoleTracks: ["qa", "regulatory", "medinfo", "clinical"],
   remotePreference: "flexible",
   preferredSeniority: "entry-to-mid",
   transitionContext:
-    "Candidate holds an MSc in Clinical Pharmacology (Distinction) and a BSc in Clinical Pharmacy. They have extensive experience managing high-volume community dispensaries (13,000+ items/mo), strict Controlled Drug governance, and patient triage. They also possess molecular biology lab experience (DNA/RNA extraction, Illumina MiSeq). They are leveraging their GDocP, GCP awareness, and clinical knowledge to transition entirely out of retail pharmacy into desk-based industry roles (PV, QA, Regulatory, or Clinical Ops). They have NO prior industry experience — only transferable pharmacy and lab skills.",
+    "Candidate holds an MSc in Clinical Pharmacology (Distinction) and a BSc in Clinical Pharmacy. They have extensive experience managing high-volume community dispensaries (13,000+ items/mo), strict Controlled Drug governance, and patient triage. They also possess molecular biology lab experience (DNA/RNA extraction, Illumina MiSeq). They are leveraging their GDocP, GCP awareness, and clinical knowledge to transition entirely out of retail pharmacy into desk-based industry roles (QA, Regulatory, Clinical Ops, or Medical Information). They have NO prior industry experience — only transferable pharmacy and lab skills.",
 } as const;
 
 function formatRoleTrack(roleTrack: string) {
@@ -25,8 +25,6 @@ function formatRoleTrack(roleTrack: string) {
       return "Quality Assurance";
     case "regulatory":
       return "Regulatory Affairs";
-    case "pv":
-      return "Pharmacovigilance";
     case "medinfo":
       return "Medical Information";
     case "clinical":

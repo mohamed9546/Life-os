@@ -115,7 +115,6 @@ export function OnboardingForm({
           {[
             ["qa", "Quality assurance"],
             ["regulatory", "Regulatory"],
-            ["pv", "Pharmacovigilance"],
             ["medinfo", "Medical information"],
             ["clinical", "Clinical operations"],
           ].map(([value, label]) => {

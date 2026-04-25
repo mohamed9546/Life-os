@@ -1,4 +1,3 @@
-import { readObject, ConfigFiles } from "@/lib/storage";
 import type {
   AppConfig,
   CompanyIntel,
@@ -10,6 +9,7 @@ import type {
 import { apolloProvider } from "./providers/apollo";
 import { unwrapOrNull } from "./providers/types";
 import { generateOutreachStrategy } from "./outreach-ai";
+import { getAppConfig } from "@/lib/config/app-config";
 
 export interface ContactStrategyResult {
   companyIntel: CompanyIntel | null;
@@ -39,7 +39,7 @@ function defaultEnrichmentConfig(): AppConfig["enrichment"] {
 }
 
 async function loadEnrichmentConfig(): Promise<AppConfig["enrichment"]> {
-  const appConfig = await readObject<AppConfig>(ConfigFiles.APP_CONFIG);
+  const appConfig = await getAppConfig();
   return {
     ...defaultEnrichmentConfig(),
     ...(appConfig?.enrichment || {}),
@@ -85,6 +85,74 @@ async function backfillEmails(
   if (people.length > 5) updated.push(...people.slice(5));
 
   return updated;
+}
+
+function inferCompanyDomain(raw: RawJobItem, companyIntel: CompanyIntel | null): string | undefined {
+  if (companyIntel?.domain) {
+    return companyIntel.domain;
+  }
+
+  try {
+    const host = new URL(raw.link).hostname.replace(/^www\./, "").toLowerCase();
+    if (/(linkedin|indeed|totaljobs|irishjobs|adzuna|reed|jooble|careerjet|serpapi|google|findwork|themuse|arbeitnow|remotive|himalayas)/.test(host)) {
+      return undefined;
+    }
+    return host;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildFallbackDecisionMakers(
+  raw: RawJobItem,
+  parsed: ParsedJobPosting,
+  companyIntel: CompanyIntel | null
+): DecisionMaker[] {
+  const companyDomain = inferCompanyDomain(raw, companyIntel);
+  const country = /ireland|dublin|cork|galway|limerick/i.test(parsed.location || raw.location)
+    ? "Ireland"
+    : /egypt|cairo/i.test(parsed.location || raw.location)
+      ? "Egypt"
+      : "United Kingdom";
+
+  const templates: Record<string, Array<{ fullName: string; title: string; departments: string[]; seniority: string }>> = {
+    regulatory: [
+      { fullName: "Regulatory Affairs Hiring Team", title: "Regulatory Affairs Hiring Team", departments: ["regulatory"], seniority: "manager" },
+      { fullName: "Talent Acquisition Team", title: "Talent Acquisition", departments: ["human_resources"], seniority: "manager" },
+    ],
+    qa: [
+      { fullName: "Quality Assurance Hiring Team", title: "Quality Assurance Hiring Team", departments: ["quality_assurance"], seniority: "manager" },
+      { fullName: "Talent Acquisition Team", title: "Talent Acquisition", departments: ["human_resources"], seniority: "manager" },
+    ],
+    clinical: [
+      { fullName: "Clinical Operations Hiring Team", title: "Clinical Operations Hiring Team", departments: ["operations", "medical_health"], seniority: "manager" },
+      { fullName: "Talent Acquisition Team", title: "Talent Acquisition", departments: ["human_resources"], seniority: "manager" },
+    ],
+    medinfo: [
+      { fullName: "Medical Information Hiring Team", title: "Medical Information Hiring Team", departments: ["medical_affairs"], seniority: "manager" },
+      { fullName: "Talent Acquisition Team", title: "Talent Acquisition", departments: ["human_resources"], seniority: "manager" },
+    ],
+    other: [
+      { fullName: "Hiring Team", title: "Hiring Team", departments: ["human_resources"], seniority: "manager" },
+      { fullName: "Talent Acquisition Team", title: "Talent Acquisition", departments: ["human_resources"], seniority: "manager" },
+    ],
+  };
+
+  const picked = templates[parsed.roleTrack] || templates.other;
+  return picked.map((item, index) => ({
+    id: `fallback-${raw.sourceJobId || raw.link}-${index}`,
+    firstName: item.fullName.split(/\s+/)[0] || "Hiring",
+    lastName: item.fullName.split(/\s+/).slice(1).join(" ") || "Team",
+    fullName: item.fullName,
+    title: item.title,
+    company: parsed.company || raw.company,
+    companyDomain,
+    seniority: item.seniority,
+    departments: item.departments,
+    linkedinUrl: companyIntel?.linkedinUrl,
+    country,
+    foundAt: new Date().toISOString(),
+  }));
 }
 
 export async function buildContactStrategy(
@@ -147,6 +215,10 @@ export async function buildContactStrategy(
     ) {
       decisionMakers = await backfillEmails(decisionMakers, companyIntel.domain);
     }
+  }
+
+  if (decisionMakers.length === 0) {
+    decisionMakers = buildFallbackDecisionMakers(raw, parsed, companyIntel);
   }
 
   // ---- Outreach strategy ----
