@@ -14,8 +14,11 @@ interface AIHealthState {
   } | null;
   usage: {
     date: string;
+    monthKey: string;
     totalCalls: number;
     callsByTaskType: Record<string, number>;
+    estimatedSpendGbp: number;
+    spendByTaskType: Record<string, number>;
     lastCallAt: string | null;
   } | null;
   config: Pick<
@@ -27,6 +30,12 @@ interface AIHealthState {
     | "compatibilityMode"
     | "model"
     | "fallbackModel"
+    | "monthlyBudgetGbp"
+    | "estimatedSpendGbp"
+    | "allowCloudInLocalMode"
+    | "hasPrimaryApiKey"
+    | "secondaryRuntime"
+    | "hasSecondaryApiKey"
     | "maxCallsPerDay"
     | "maxCallsPerTaskType"
     | "taskSettings"

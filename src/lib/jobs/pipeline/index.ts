@@ -448,6 +448,16 @@ async function getUnenrichedRawJobs(userId?: string): Promise<RawJobItem[]> {
       (raw as RawJobItem & { dedupeKey?: string }).dedupeKey ||
       generateDedupeKey(raw);
     return !processedKeys.has(key);
+  }).sort((left, right) => {
+    const leftGmail = left.source.startsWith("gmail-") ? 1 : 0;
+    const rightGmail = right.source.startsWith("gmail-") ? 1 : 0;
+    if (leftGmail !== rightGmail) {
+      return rightGmail - leftGmail;
+    }
+
+    const leftFetchedAt = new Date(left.fetchedAt || 0).getTime();
+    const rightFetchedAt = new Date(right.fetchedAt || 0).getTime();
+    return rightFetchedAt - leftFetchedAt;
   });
 }
 

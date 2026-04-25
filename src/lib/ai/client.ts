@@ -17,8 +17,25 @@ import {
   getTaskRuntimeSettings,
   AI_TASK_ORDER,
 } from "./config";
-import { checkAIRateLimit, recordAICall } from "./rate-limiter";
+import { checkAIRateLimit, getAIUsageStats, recordAICall } from "./rate-limiter";
 import { appendToCollection, Collections } from "@/lib/storage";
+
+type AIRuntimeCandidate = {
+  target: "primary" | "secondary";
+  provider: AIConfig["provider"];
+  mode: AIConfig["mode"];
+  enabled: boolean;
+  baseUrl: string;
+  apiKey?: string | null;
+  compatibilityMode: AIConfig["compatibilityMode"];
+  model: string;
+  fallbackModel: string | null;
+};
+
+const GEMINI_PRICING_GBP_PER_MILLION_TOKENS = {
+  input: 0.4,
+  output: 1.2,
+};
 
 export interface AICallOptions {
   taskType: string;
@@ -68,6 +85,114 @@ async function logAICall(entry: AILogEntry): Promise<void> {
   } catch (err) {
     console.error("[ai-client] Failed to write AI log:", err);
   }
+}
+
+function estimateTokensFromText(value: string): number {
+  return Math.max(1, Math.ceil(value.length / 4));
+}
+
+function estimateCostGbp(input: {
+  provider: AIConfig["provider"];
+  model: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  inputBytes: number;
+  rawOutput: string;
+}): number {
+  if (input.provider !== "gemini") {
+    return 0;
+  }
+
+  const promptTokens =
+    typeof input.promptTokens === "number"
+      ? input.promptTokens
+      : estimateTokensFromText("x".repeat(input.inputBytes));
+  const completionTokens =
+    typeof input.completionTokens === "number"
+      ? input.completionTokens
+      : estimateTokensFromText(input.rawOutput);
+
+  const cost =
+    (promptTokens / 1_000_000) * GEMINI_PRICING_GBP_PER_MILLION_TOKENS.input +
+    (completionTokens / 1_000_000) * GEMINI_PRICING_GBP_PER_MILLION_TOKENS.output;
+
+  return Math.max(0, Number(cost.toFixed(6)));
+}
+
+function buildPrimaryRuntime(config: AIConfig): AIRuntimeCandidate {
+  return {
+    target: "primary",
+    provider: config.provider,
+    mode: config.mode,
+    enabled: config.enabled,
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
+    compatibilityMode: config.compatibilityMode,
+    model: config.model,
+    fallbackModel: config.fallbackModel,
+  };
+}
+
+function buildSecondaryRuntime(config: AIConfig): AIRuntimeCandidate {
+  return {
+    target: "secondary",
+    provider: config.secondaryRuntime.provider,
+    mode: config.secondaryRuntime.mode,
+    enabled: config.secondaryRuntime.enabled && Boolean(config.hasSecondaryApiKey),
+    baseUrl: config.secondaryRuntime.baseUrl,
+    apiKey: process.env.OPENROUTER_API_KEY || null,
+    compatibilityMode: config.secondaryRuntime.compatibilityMode,
+    model: config.secondaryRuntime.model,
+    fallbackModel: config.secondaryRuntime.fallbackModel,
+  };
+}
+
+function buildRuntimeCandidates(
+  config: AIConfig,
+  taskConfig: ReturnType<typeof getTaskRuntimeSettings>,
+  monthlyBudgetReached: boolean
+): AIRuntimeCandidate[] {
+  const primary = buildPrimaryRuntime(config);
+  const secondary = buildSecondaryRuntime(config);
+
+  if (taskConfig.preferredRuntime === "secondary") {
+    return secondary.enabled ? [secondary] : [];
+  }
+
+  if (monthlyBudgetReached && taskConfig.allowSecondaryFallback && secondary.enabled) {
+    return [secondary];
+  }
+
+  const candidates = [primary];
+  if (taskConfig.allowSecondaryFallback && secondary.enabled) {
+    candidates.push(secondary);
+  }
+  return candidates.filter((candidate) => candidate.enabled);
+}
+
+function resolveModelsForRuntime(
+  config: AIConfig,
+  taskConfig: ReturnType<typeof getTaskRuntimeSettings>,
+  runtime: AIRuntimeCandidate
+) {
+  if (runtime.target === "secondary") {
+    if (taskConfig.preferredRuntime === "secondary") {
+      return {
+        model: taskConfig.model,
+        fallbackModel: taskConfig.fallbackModel ?? config.secondaryRuntime.fallbackModel,
+      };
+    }
+
+    return {
+      model: config.secondaryRuntime.model,
+      fallbackModel: config.secondaryRuntime.fallbackModel,
+    };
+  }
+
+  return {
+    model: taskConfig.model,
+    fallbackModel: taskConfig.fallbackModel,
+  };
 }
 
 async function fetchWithTimeout(
@@ -175,7 +300,7 @@ function classifyAIError(err: unknown): AIFailureKind {
 }
 
 async function callRuntime(
-  config: AIConfig,
+  runtime: AIRuntimeCandidate,
   model: string,
   options: AICallOptions,
   temperature: number,
@@ -187,6 +312,8 @@ async function callRuntime(
   durationMs: number;
   model: string;
   jsonExtractionFallback: boolean;
+  promptTokens?: number;
+  completionTokens?: number;
 }> {
   const rawText = Boolean(options.rawTextOutput);
   const startedAt = Date.now();
@@ -194,17 +321,17 @@ async function callRuntime(
     "Content-Type": "application/json",
   };
 
-  if (config.apiKey) {
-    headers.Authorization = `Bearer ${config.apiKey}`;
+  if (runtime.apiKey) {
+    headers.Authorization = `Bearer ${runtime.apiKey}`;
   }
 
   let response: Response;
 
-  if (config.provider === "gemini") {
-    if (!config.apiKey) {
+  if (runtime.provider === "gemini") {
+    if (!runtime.apiKey) {
       throw new Error("GEMINI_API_KEY is required for Gemini provider");
     }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${runtime.apiKey}`;
     response = await fetchWithTimeout(
       url,
       {
@@ -223,14 +350,14 @@ async function callRuntime(
       timeoutMs
     );
   } else {
-    switch (config.compatibilityMode) {
+    switch (runtime.compatibilityMode) {
     case "ollama": {
       const prompt = options.systemPrompt
         ? `${options.systemPrompt}\n\n${options.prompt}`
         : options.prompt;
 
       response = await fetchWithTimeout(
-        `${config.baseUrl}/api/generate`,
+        `${runtime.baseUrl}/api/generate`,
         {
           method: "POST",
           headers,
@@ -251,7 +378,7 @@ async function callRuntime(
     }
     case "openai": {
       response = await fetchWithTimeout(
-        `${config.baseUrl}/v1/chat/completions`,
+        `${runtime.baseUrl}/v1/chat/completions`,
         {
           method: "POST",
           headers,
@@ -276,11 +403,11 @@ async function callRuntime(
       const anthropicHeaders = {
         ...headers,
         "anthropic-version": "2023-06-01",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(runtime.apiKey ? { "x-api-key": runtime.apiKey } : {}),
       };
 
       response = await fetchWithTimeout(
-        `${config.baseUrl}/v1/messages`,
+        `${runtime.baseUrl}/v1/messages`,
         {
           method: "POST",
           headers: anthropicHeaders,
@@ -297,7 +424,7 @@ async function callRuntime(
       break;
     }
     default:
-        throw new Error(`Unsupported AI compatibility mode: ${config.compatibilityMode}`);
+        throw new Error(`Unsupported AI compatibility mode: ${runtime.compatibilityMode}`);
     }
   }
 
@@ -323,11 +450,20 @@ async function callRuntime(
     };
   }
 
-  if (config.provider === "gemini") {
+  if (runtime.provider === "gemini") {
+    const usage = payload.usageMetadata || {};
     const content = payload.candidates?.[0]?.content?.parts?.[0]?.text;
     const rawOutput = typeof content === "string" ? content : JSON.stringify(payload);
     if (rawText) {
-      return { parsed: rawOutput, rawOutput, durationMs, model, jsonExtractionFallback: false };
+      return {
+        parsed: rawOutput,
+        rawOutput,
+        durationMs,
+        model,
+        jsonExtractionFallback: false,
+        promptTokens: usage.promptTokenCount,
+        completionTokens: usage.candidatesTokenCount,
+      };
     }
     const extracted = extractJSON(rawOutput);
     return {
@@ -336,10 +472,12 @@ async function callRuntime(
       durationMs,
       model,
       jsonExtractionFallback: extracted.jsonExtractionFallback,
+      promptTokens: usage.promptTokenCount,
+      completionTokens: usage.candidatesTokenCount,
     };
   }
 
-  switch (config.compatibilityMode) {
+  switch (runtime.compatibilityMode) {
     case "ollama": {
       const rawOutput =
         typeof payload.response === "string" && payload.response.length > 0
@@ -361,10 +499,19 @@ async function callRuntime(
     }
     case "openai": {
       const content = payload.choices?.[0]?.message?.content;
+      const usage = payload.usage || {};
       const rawOutput =
         typeof content === "string" ? content : JSON.stringify(payload);
       if (rawText) {
-        return { parsed: rawOutput, rawOutput, durationMs, model: payload.model || model, jsonExtractionFallback: false };
+        return {
+          parsed: rawOutput,
+          rawOutput,
+          durationMs,
+          model: payload.model || model,
+          jsonExtractionFallback: false,
+          promptTokens: usage.prompt_tokens,
+          completionTokens: usage.completion_tokens,
+        };
       }
       const extracted = extractJSON(rawOutput);
       return {
@@ -373,6 +520,8 @@ async function callRuntime(
         durationMs,
         model: payload.model || model,
         jsonExtractionFallback: extracted.jsonExtractionFallback,
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
       };
     }
     case "anthropic": {
@@ -398,7 +547,7 @@ async function callRuntime(
       };
     }
     default:
-      throw new Error(`Unsupported AI compatibility mode: ${config.compatibilityMode}`);
+      throw new Error(`Unsupported AI compatibility mode: ${runtime.compatibilityMode}`);
   }
 }
 
@@ -430,25 +579,47 @@ export async function callAI<T = unknown>(
     };
   }
 
-  if (!options.skipRateLimit) {
-    const rateCheck = await checkAIRateLimit(options.taskType);
-    if (!rateCheck.allowed) {
-      return {
-        success: false,
-        error: rateCheck.reason,
-        failureKind: "rate_limited",
-        attemptCount: 0,
-        fallbackAttempted: false,
-        effectiveTimeoutMs,
-      };
-    }
+  const usage = options.skipRateLimit ? null : await getAIUsageStats();
+  const monthlyBudgetReached =
+    !options.skipRateLimit &&
+    (usage?.estimatedSpendGbp || 0) >= config.monthlyBudgetGbp;
+  const runtimeCandidates = buildRuntimeCandidates(config, taskConfig, monthlyBudgetReached);
+
+  if (runtimeCandidates.length === 0) {
+    return {
+      success: false,
+      error:
+        taskConfig.preferredRuntime === "secondary"
+          ? "Secondary AI runtime is not available. Set OPENROUTER_API_KEY in env."
+          : "No AI runtime is available for this task.",
+      failureKind: monthlyBudgetReached ? "rate_limited" : "runtime_error",
+      effectiveTimeoutMs,
+    };
   }
 
-  const primaryAttempts = Math.max(1, taskConfig.retryAttempts + 1);
-  const candidateModels = [taskConfig.model];
-
-  if (taskConfig.fallbackModel && taskConfig.fallbackModel !== taskConfig.model) {
-    candidateModels.push(taskConfig.fallbackModel);
+  if (!options.skipRateLimit) {
+    const rateCheck = await checkAIRateLimit(
+      options.taskType,
+      taskConfig.dailyLimitOverride,
+      taskConfig.preferredRuntime === "primary"
+    );
+    if (!rateCheck.allowed) {
+      if (
+        rateCheck.reason?.includes("Monthly AI budget reached") &&
+        runtimeCandidates.some((candidate) => candidate.target === "secondary")
+      ) {
+        // Fall through to secondary runtime only.
+      } else {
+        return {
+          success: false,
+          error: rateCheck.reason,
+          failureKind: "rate_limited",
+          attemptCount: 0,
+          fallbackAttempted: false,
+          effectiveTimeoutMs,
+        };
+      }
+    }
   }
 
   let lastError = "Unknown AI error";
@@ -459,82 +630,109 @@ export async function callAI<T = unknown>(
   const serializedInput = getSerializedInput(options.rawInput ?? options.prompt);
   const inputBytes = getByteLength(serializedInput);
 
-  for (let modelIndex = 0; modelIndex < candidateModels.length; modelIndex++) {
-    const model = candidateModels[modelIndex];
-    const attemptsForModel = modelIndex === 0 ? primaryAttempts : 1;
+  for (let runtimeIndex = 0; runtimeIndex < runtimeCandidates.length; runtimeIndex++) {
+    const runtime = runtimeCandidates[runtimeIndex];
+    const runtimeModels = resolveModelsForRuntime(config, taskConfig, runtime);
+    const primaryAttempts = runtime.target === "primary"
+      ? Math.max(1, taskConfig.retryAttempts + 1)
+      : 1;
+    const candidateModels = [runtimeModels.model];
 
-    for (let attempt = 0; attempt < attemptsForModel; attempt++) {
-      totalAttemptCount += 1;
-      if (modelIndex > 0) {
-        fallbackAttempted = true;
-      }
+    if (
+      runtimeModels.fallbackModel &&
+      runtimeModels.fallbackModel !== runtimeModels.model
+    ) {
+      candidateModels.push(runtimeModels.fallbackModel);
+    }
 
-      try {
-        if (attempt > 0 || modelIndex > 0) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, config.retryDelayMs)
+    for (let modelIndex = 0; modelIndex < candidateModels.length; modelIndex++) {
+      const model = candidateModels[modelIndex];
+      const attemptsForModel = modelIndex === 0 ? primaryAttempts : 1;
+
+      for (let attempt = 0; attempt < attemptsForModel; attempt++) {
+        totalAttemptCount += 1;
+        if (runtimeIndex > 0 || modelIndex > 0) {
+          fallbackAttempted = true;
+        }
+
+        try {
+          if (attempt > 0 || modelIndex > 0 || runtimeIndex > 0) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, config.retryDelayMs)
+            );
+          }
+
+          const result = await callRuntime(
+            runtime,
+            model,
+            options,
+            temperature,
+            maxTokens,
+            effectiveTimeoutMs
+          );
+
+          const estimatedCostGbp = estimateCostGbp({
+            provider: runtime.provider,
+            model: result.model,
+            promptTokens: result.promptTokens,
+            completionTokens: result.completionTokens,
+            inputBytes,
+            rawOutput: result.rawOutput,
+          });
+
+          if (!options.skipRateLimit) {
+            await recordAICall(options.taskType, estimatedCostGbp);
+          }
+
+          const meta: AIMetadata = {
+            model: result.model,
+            promptType: options.taskType,
+            timestamp: new Date().toISOString(),
+            confidence: 0,
+            durationMs: result.durationMs,
+            inputBytes,
+            outputBytes: getByteLength(result.rawOutput),
+            fallbackUsed:
+              runtimeIndex > 0 || model !== runtimeModels.model,
+            fallbackAttempted,
+            attemptCount: totalAttemptCount,
+            effectiveTimeoutMs,
+            jsonExtractionFallback: result.jsonExtractionFallback,
+          };
+
+          await logAICall({
+            timestamp: meta.timestamp,
+            taskType: options.taskType,
+            model: result.model,
+            success: true,
+            durationMs: result.durationMs,
+            inputBytes,
+            outputBytes: meta.outputBytes,
+            fallbackUsed: meta.fallbackUsed,
+            fallbackAttempted,
+            attemptCount: totalAttemptCount,
+            effectiveTimeoutMs,
+            jsonExtractionFallback: result.jsonExtractionFallback,
+            ...(config.logPromptPreviews
+              ? { inputPreview: serializedInput.slice(0, 200) }
+              : {}),
+          });
+
+          return {
+            success: true,
+            data: result.parsed as T,
+            meta,
+            rawOutput: result.rawOutput,
+          };
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : "Unknown AI error";
+          lastFailureKind = classifyAIError(err);
+          lastRawOutput = "";
+          console.error(
+            `[ai-client] ${options.taskType} using ${runtime.provider}/${model} attempt ${attempt + 1} failed:`,
+            lastError
           );
         }
-
-        const result = await callRuntime(
-          config,
-          model,
-          options,
-          temperature,
-          maxTokens,
-          effectiveTimeoutMs
-        );
-
-        if (!options.skipRateLimit) {
-          await recordAICall(options.taskType);
-        }
-
-        const meta: AIMetadata = {
-          model: result.model,
-          promptType: options.taskType,
-          timestamp: new Date().toISOString(),
-          confidence: 0,
-          durationMs: result.durationMs,
-          inputBytes,
-          outputBytes: getByteLength(result.rawOutput),
-          fallbackUsed: model !== taskConfig.model,
-          fallbackAttempted,
-          attemptCount: totalAttemptCount,
-          effectiveTimeoutMs,
-          jsonExtractionFallback: result.jsonExtractionFallback,
-        };
-
-        await logAICall({
-          timestamp: meta.timestamp,
-          taskType: options.taskType,
-          model: result.model,
-          success: true,
-          durationMs: result.durationMs,
-          inputBytes,
-          outputBytes: meta.outputBytes,
-          fallbackUsed: model !== taskConfig.model,
-          fallbackAttempted,
-          attemptCount: totalAttemptCount,
-          effectiveTimeoutMs,
-          jsonExtractionFallback: result.jsonExtractionFallback,
-          inputPreview:
-            serializedInput.slice(0, 200),
-        });
-
-        return {
-          success: true,
-          data: result.parsed as T,
-          meta,
-          rawOutput: result.rawOutput,
-        };
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : "Unknown AI error";
-        lastFailureKind = classifyAIError(err);
-        lastRawOutput = "";
-        console.error(
-          `[ai-client] ${options.taskType} using ${model} attempt ${attempt + 1} failed:`,
-          lastError
-        );
       }
     }
   }
@@ -542,18 +740,20 @@ export async function callAI<T = unknown>(
   await logAICall({
     timestamp: new Date().toISOString(),
     taskType: options.taskType,
-    model: candidateModels[candidateModels.length - 1],
+    model: runtimeCandidates[runtimeCandidates.length - 1]?.model || taskConfig.model,
     success: false,
     durationMs: 0,
     inputBytes,
     outputBytes: 0,
-    fallbackUsed: candidateModels.length > 1,
+    fallbackUsed: runtimeCandidates.length > 1,
     fallbackAttempted,
     attemptCount: totalAttemptCount,
     effectiveTimeoutMs,
     failureKind: lastFailureKind,
     error: lastError,
-    inputPreview: serializedInput.slice(0, 200),
+    ...(config.logPromptPreviews
+      ? { inputPreview: serializedInput.slice(0, 200) }
+      : {}),
   });
 
   return {
@@ -640,6 +840,7 @@ export async function checkAIHealth(): Promise<AIHealthStatus> {
       enabled: taskConfig.enabled,
       model: taskConfig.model,
       fallbackModel: taskConfig.fallbackModel,
+      preferredRuntime: taskConfig.preferredRuntime,
     };
   });
 

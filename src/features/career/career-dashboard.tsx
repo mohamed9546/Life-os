@@ -95,6 +95,16 @@ export function CareerDashboard() {
   useEffect(() => {
     if (pipeline.lastResult) {
       void refreshApplicationLogs();
+      const first = window.setTimeout(() => {
+        void refreshApplicationLogs();
+      }, 5000);
+      const second = window.setTimeout(() => {
+        void refreshApplicationLogs();
+      }, 15000);
+      return () => {
+        window.clearTimeout(first);
+        window.clearTimeout(second);
+      };
     }
   }, [pipeline.lastResult]);
 

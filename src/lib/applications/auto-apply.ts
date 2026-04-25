@@ -186,15 +186,24 @@ async function applyEligibleJobs(
   options: { maxApplications: number }
 ): Promise<ApplicationLog[]> {
   const logs: ApplicationLog[] = [];
-  const eligible = ranked
-    .filter(isEligibleForAutoApply)
-    .sort((left, right) => (right.fit?.data.fitScore || 0) - (left.fit?.data.fitScore || 0))
-    .slice(0, Math.max(options.maxApplications * 5, options.maxApplications));
   const existingLogs = await getApplicationLogs(userId, 1000);
+  const reviewStats = buildApplicationReviewStats(existingLogs);
   const existingKeys = new Set(
     existingLogs
       .filter((log) => isActionableApplicationStatus(log.status))
       .map((log) => log.dedupeKey)
+  );
+  const dedupedEligible = dedupeEligibleJobs(ranked.filter(isEligibleForAutoApply));
+  const sortedEligible = dedupedEligible.sort((left, right) =>
+    compareApplicationCandidates(left, right, reviewStats)
+  );
+  const gmailEligible = sortedEligible.filter((job) => isPreferredRecommendationSource(job.raw.source));
+  const otherEligible = sortedEligible.filter(
+    (job) => !isPreferredRecommendationSource(job.raw.source)
+  );
+  const eligible = [...gmailEligible, ...otherEligible].slice(
+    0,
+    Math.max(options.maxApplications * 5, options.maxApplications)
   );
 
   for (const job of eligible) {
@@ -206,11 +215,6 @@ async function applyEligibleJobs(
         applyUrl: job.raw.link,
       }))
     ) {
-      logs.push(buildLog(job, {
-        status: "skipped",
-        blocker: "already-applied",
-        detail: "Already present in application logs.",
-      }));
       continue;
     }
 
@@ -241,6 +245,112 @@ async function applyEligibleJobs(
   }
 
   return logs;
+}
+
+function dedupeEligibleJobs(jobs: EnrichedJob[]): EnrichedJob[] {
+  const seen = new Set<string>();
+  const deduped: EnrichedJob[] = [];
+
+  for (const job of jobs) {
+    if (seen.has(job.dedupeKey)) {
+      continue;
+    }
+    seen.add(job.dedupeKey);
+    deduped.push(job);
+  }
+
+  return deduped;
+}
+
+function buildApplicationReviewStats(logs: ApplicationLog[]) {
+  const stats = new Map<
+    string,
+    { count: number; lastAttemptAt: number; hasActionable: boolean }
+  >();
+
+  for (const log of logs) {
+    const current = stats.get(log.dedupeKey) || {
+      count: 0,
+      lastAttemptAt: 0,
+      hasActionable: false,
+    };
+    current.count += 1;
+    current.lastAttemptAt = Math.max(
+      current.lastAttemptAt,
+      new Date(log.attemptedAt).getTime()
+    );
+    current.hasActionable =
+      current.hasActionable || isActionableApplicationStatus(log.status);
+    stats.set(log.dedupeKey, current);
+  }
+
+  return stats;
+}
+
+function compareApplicationCandidates(
+  left: EnrichedJob,
+  right: EnrichedJob,
+  reviewStats: Map<string, { count: number; lastAttemptAt: number; hasActionable: boolean }>
+): number {
+  const leftStats = reviewStats.get(left.dedupeKey) || {
+    count: 0,
+    lastAttemptAt: 0,
+    hasActionable: false,
+  };
+  const rightStats = reviewStats.get(right.dedupeKey) || {
+    count: 0,
+    lastAttemptAt: 0,
+    hasActionable: false,
+  };
+
+  if (leftStats.hasActionable !== rightStats.hasActionable) {
+    return leftStats.hasActionable ? 1 : -1;
+  }
+
+  const leftSourceBonus = applicationSourcePriority(left.raw.source);
+  const rightSourceBonus = applicationSourcePriority(right.raw.source);
+  if (leftSourceBonus !== rightSourceBonus) {
+    return rightSourceBonus - leftSourceBonus;
+  }
+
+  if (leftStats.count !== rightStats.count) {
+    return leftStats.count - rightStats.count;
+  }
+
+  const leftFit = left.fit?.data.fitScore || 0;
+  const rightFit = right.fit?.data.fitScore || 0;
+  if (leftFit !== rightFit) {
+    return rightFit - leftFit;
+  }
+
+  const leftFetchedAt = new Date(left.raw.fetchedAt || 0).getTime();
+  const rightFetchedAt = new Date(right.raw.fetchedAt || 0).getTime();
+  return rightFetchedAt - leftFetchedAt;
+}
+
+function applicationSourcePriority(source: string): number {
+  switch (source) {
+    case "gmail-totaljobs":
+      return 40;
+    case "gmail-irishjobs":
+      return 36;
+    case "gmail-linkedin":
+      return 34;
+    case "gmail-indeed":
+      return 28;
+    case "gmail-job-alert":
+      return 20;
+    case "linkedin":
+      return 12;
+    case "company-generic":
+      return 10;
+    default:
+      return 0;
+  }
+}
+
+function isPreferredRecommendationSource(source: string): boolean {
+  return source.startsWith("gmail-");
 }
 
 function countActionableLogs(logs: ApplicationLog[]): number {

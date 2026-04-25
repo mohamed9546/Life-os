@@ -29,9 +29,10 @@ export type RoleTrack =
 export type NotificationFrequency = "manual" | "daily" | "weekly";
 export type RoutineArea = "career" | "money" | "life" | "health" | "admin";
 export type RoutineCadence = "daily" | "weekly" | "custom";
-export type AIProvider = "ollama" | "gemini";
+export type AIProvider = "ollama" | "gemini" | "openrouter";
 export type AIRuntimeMode = "local" | "cloud";
 export type AICompatibilityMode = "ollama" | "openai" | "anthropic" | "gemini";
+export type AIRuntimeTarget = "primary" | "secondary";
 export type AIFailureKind =
   | "timeout"
   | "runtime_error"
@@ -97,10 +98,23 @@ export interface AITaskRuntimeConfig {
   label: string;
   model?: string;
   fallbackModel?: string | null;
+  preferredRuntime?: AIRuntimeTarget;
+  dailyLimitOverride?: number | null;
+  allowSecondaryFallback?: boolean;
   timeoutMs?: number;
   retryAttempts?: number;
   temperature: number;
   maxTokens: number;
+}
+
+export interface AISecondaryRuntimeConfig {
+  enabled: boolean;
+  provider: AIProvider;
+  mode: AIRuntimeMode;
+  baseUrl: string;
+  compatibilityMode: AICompatibilityMode;
+  model: string;
+  fallbackModel: string | null;
 }
 
 export interface AIHealthStatus {
@@ -119,6 +133,7 @@ export interface AIHealthStatus {
     enabled: boolean;
     model: string;
     fallbackModel: string | null;
+    preferredRuntime?: AIRuntimeTarget;
   }>;
   diagnostics?: {
     recentCalls: number;
@@ -139,6 +154,13 @@ export interface AIConfig {
   compatibilityMode: AICompatibilityMode;
   model: string;
   fallbackModel: string | null;
+  monthlyBudgetGbp: number;
+  estimatedSpendGbp?: number;
+  allowCloudInLocalMode?: boolean;
+  logPromptPreviews?: boolean;
+  hasPrimaryApiKey?: boolean;
+  secondaryRuntime: AISecondaryRuntimeConfig;
+  hasSecondaryApiKey?: boolean;
   timeoutMs: number;
   temperature: number;
   maxTokens: number;

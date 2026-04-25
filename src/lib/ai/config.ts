@@ -6,9 +6,63 @@
 import { readObject, writeObject, ConfigFiles } from "@/lib/storage";
 import { AIConfig, AITaskType } from "@/types";
 import { isLocalOnlyMode } from "@/lib/env/local-only";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 
 const LOCAL_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 const LOCAL_OLLAMA_MODEL = "qwen3.5:2b";
+const DEFAULT_PRIMARY_MODEL = "gemini-2.5-flash-lite";
+const DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const DEFAULT_SECONDARY_BASE_URL = "https://openrouter.ai/api";
+const DEFAULT_SECONDARY_MODEL = "qwen/qwen3-next-80b-a3b-instruct:free";
+const DEFAULT_SECONDARY_FALLBACK_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+
+function truthy(value?: string | null): boolean {
+  return ["1", "true", "yes", "on"].includes((value || "").trim().toLowerCase());
+}
+
+function readSecretFromEnvFile(names: string[]): string | null {
+  const envPath = path.join(process.cwd(), ".env.local");
+  if (!existsSync(envPath)) {
+    return null;
+  }
+
+  const content = readFileSync(envPath, "utf8");
+  for (const name of names) {
+    const match = content.match(new RegExp(`^${name}=([^\r\n]+)$`, "mi"));
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return null;
+}
+
+function readGeminiApiKey(): string | null {
+  return (
+    process.env.GEMINI_API_KEY ||
+    process.env.Gemini_API_KEY ||
+    process.env.Gemini_API_KEY_paid ||
+    readSecretFromEnvFile(["GEMINI_API_KEY", "Gemini_API_KEY", "Gemini_API_KEY_paid"]) ||
+    null
+  );
+}
+
+function readOpenRouterApiKey(): string | null {
+  return (
+    process.env.OPENROUTER_API_KEY ||
+    readSecretFromEnvFile(["OPENROUTER_API_KEY"]) ||
+    null
+  );
+}
+
+function shouldAllowCloudAIInLocal(config: AIConfig): boolean {
+  return (
+    Boolean(config.allowCloudInLocalMode) ||
+    truthy(process.env.LIFE_OS_ALLOW_CLOUD_AI_IN_LOCAL) ||
+    truthy(process.env.NEXT_PUBLIC_LIFE_OS_ALLOW_CLOUD_AI_IN_LOCAL)
+  );
+}
 
 export const AI_TASK_ORDER: AITaskType[] = [
   "health-test",
@@ -36,27 +90,44 @@ export const AI_TASK_ORDER: AITaskType[] = [
 ];
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  provider: "ollama",
-  mode: "local",
+  provider: "gemini",
+  mode: "cloud",
   enabled: true,
-  baseUrl: process.env.OLLAMA_BASE_URL || LOCAL_OLLAMA_BASE_URL,
+  baseUrl: DEFAULT_GEMINI_BASE_URL,
   apiKey: null,
-  compatibilityMode: "ollama",
-  model: LOCAL_OLLAMA_MODEL,
+  compatibilityMode: "gemini",
+  model: DEFAULT_PRIMARY_MODEL,
   fallbackModel: null,
+  monthlyBudgetGbp: 5,
+  estimatedSpendGbp: 0,
+  allowCloudInLocalMode: true,
+  logPromptPreviews: false,
+  hasPrimaryApiKey: false,
+  secondaryRuntime: {
+    enabled: true,
+    provider: "openrouter",
+    mode: "cloud",
+    baseUrl: DEFAULT_SECONDARY_BASE_URL,
+    compatibilityMode: "openai",
+    model: DEFAULT_SECONDARY_MODEL,
+    fallbackModel: DEFAULT_SECONDARY_FALLBACK_MODEL,
+  },
+  hasSecondaryApiKey: false,
   timeoutMs: 45_000,
   temperature: 0.15,
   maxTokens: 1_200,
-  retryAttempts: 0,
+  retryAttempts: 1,
   retryDelayMs: 1_500,
-  maxCallsPerDay: 750,
-  maxCallsPerTaskType: 250,
+  maxCallsPerDay: 25,
+  maxCallsPerTaskType: 12,
   taskSettings: {
     "health-test": {
       enabled: true,
       label: "Health test",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 12_000,
       retryAttempts: 0,
       temperature: 0,
@@ -65,8 +136,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "parse-job": {
       enabled: true,
       label: "Parse job posting",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 35_000,
       retryAttempts: 0,
       temperature: 0.1,
@@ -75,8 +148,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "evaluate-job": {
       enabled: true,
       label: "Evaluate job fit",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 45_000,
       retryAttempts: 0,
       temperature: 0.1,
@@ -85,8 +160,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "categorize-transaction": {
       enabled: true,
       label: "Categorize transaction",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 20_000,
       retryAttempts: 0,
       temperature: 0.05,
@@ -95,8 +172,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-candidate-profile": {
       enabled: true,
       label: "Extract candidate profile",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 35_000,
       retryAttempts: 0,
       temperature: 0.1,
@@ -105,8 +184,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-money": {
       enabled: true,
       label: "Summarize money state",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
       timeoutMs: 25_000,
       retryAttempts: 0,
       temperature: 0.15,
@@ -115,8 +196,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-week": {
       enabled: true,
       label: "Summarize week",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
       timeoutMs: 25_000,
       retryAttempts: 0,
       temperature: 0.2,
@@ -125,8 +208,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-decision": {
       enabled: true,
       label: "Summarize decision",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
       timeoutMs: 25_000,
       retryAttempts: 0,
       temperature: 0.15,
@@ -135,8 +220,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "summarize-decision-patterns": {
       enabled: true,
       label: "Summarize decision patterns",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
       timeoutMs: 25_000,
       retryAttempts: 0,
       temperature: 0.15,
@@ -145,8 +232,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "suggest-routine-focus": {
       enabled: true,
       label: "Suggest routine focus",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 20_000,
       retryAttempts: 0,
       temperature: 0.15,
@@ -155,8 +244,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "generate-followup": {
       enabled: true,
       label: "Generate follow-up plan",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 20_000,
       retryAttempts: 0,
       temperature: 0.15,
@@ -165,8 +256,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "generate-outreach": {
       enabled: true,
       label: "Generate outreach strategy",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
       timeoutMs: 30_000,
       retryAttempts: 0,
       temperature: 0.2,
@@ -175,8 +268,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "chat": {
       enabled: true,
       label: "AI assistant chat",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
       timeoutMs: 30_000,
       retryAttempts: 0,
       temperature: 0.7,
@@ -185,8 +280,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "tailor-cv": {
       enabled: true,
       label: "Auto-Tailor CV",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 45_000,
       retryAttempts: 0,
       temperature: 0.3,
@@ -195,8 +292,11 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "linkedin-intro": {
       enabled: true,
       label: "LinkedIn intro generator",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
+      dailyLimitOverride: 2,
       timeoutMs: 20_000,
       retryAttempts: 0,
       temperature: 0.7,
@@ -205,8 +305,11 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "cover-letter": {
       enabled: true,
       label: "Cover letter generator",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
+      dailyLimitOverride: 1,
       timeoutMs: 30_000,
       retryAttempts: 0,
       temperature: 0.4,
@@ -215,8 +318,11 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "cv-optimize": {
       enabled: true,
       label: "CV optimizer (ATS)",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
+      dailyLimitOverride: 1,
       timeoutMs: 40_000,
       retryAttempts: 0,
       temperature: 0.2,
@@ -225,8 +331,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "interview-prep": {
       enabled: true,
       label: "Interview question generator",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_SECONDARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "secondary",
+      allowSecondaryFallback: false,
       timeoutMs: 40_000,
       retryAttempts: 0,
       temperature: 0.4,
@@ -235,8 +343,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "salary-lookup": {
       enabled: true,
       label: "Salary range lookup",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 15_000,
       retryAttempts: 0,
       temperature: 0.1,
@@ -245,8 +355,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "skill-gap": {
       enabled: true,
       label: "Skill gap analyzer",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 30_000,
       retryAttempts: 0,
       temperature: 0.2,
@@ -255,8 +367,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-job-from-scrape": {
       enabled: true,
       label: "Extract job from scraped page",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 30_000,
       retryAttempts: 0,
       temperature: 0.1,
@@ -265,8 +379,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     "extract-job-list-from-scrape": {
       enabled: true,
       label: "Extract job list from scraped page",
-      model: LOCAL_OLLAMA_MODEL,
+      model: DEFAULT_PRIMARY_MODEL,
       fallbackModel: null,
+      preferredRuntime: "primary",
+      allowSecondaryFallback: true,
       timeoutMs: 30_000,
       retryAttempts: 0,
       temperature: 0.1,
@@ -279,11 +395,23 @@ function normalizeBaseUrl(baseUrl?: string | null): string {
   return (baseUrl || DEFAULT_AI_CONFIG.baseUrl).trim().replace(/\/+$/, "");
 }
 
+function sanitizeConfigForStorage(config: AIConfig): Partial<AIConfig> {
+  return {
+    ...config,
+    apiKey: null,
+    estimatedSpendGbp: undefined,
+    hasPrimaryApiKey: undefined,
+    hasSecondaryApiKey: undefined,
+  };
+}
+
 const DEPRECATED_MODEL_MAP: Record<string, string> = {
-  "gemini-1.5-flash": "gemini-2.0-flash",
-  "gemini-1.5-flash-latest": "gemini-2.0-flash",
-  "gemini-1.5-pro": "gemini-2.0-flash",
-  "gemini-1.5-pro-latest": "gemini-2.0-flash",
+  "gemini-1.5-flash": "gemini-2.5-flash-lite",
+  "gemini-1.5-flash-latest": "gemini-2.5-flash-lite",
+  "gemini-1.5-pro": "gemini-2.5-flash-lite",
+  "gemini-1.5-pro-latest": "gemini-2.5-flash-lite",
+  "gemini-2.0-flash": "gemini-2.5-flash-lite",
+  "gemini-2.0-flash-001": "gemini-2.5-flash-lite",
 };
 
 function upgradeModel(model: string | null | undefined): string {
@@ -311,12 +439,49 @@ function mergeTaskSettings(
   return merged;
 }
 
+function isLegacyLocalAiConfig(config: AIConfig): boolean {
+  return (
+    config.provider === "ollama" &&
+    config.compatibilityMode === "ollama" &&
+    config.model === LOCAL_OLLAMA_MODEL
+  );
+}
+
+function migrateLegacyTaskSettings(
+  taskSettings?: Partial<AIConfig["taskSettings"]>
+): Partial<AIConfig["taskSettings"]> {
+  const migrated: Partial<AIConfig["taskSettings"]> = {};
+
+  for (const taskType of AI_TASK_ORDER) {
+    const current = taskSettings?.[taskType];
+    if (!current) {
+      continue;
+    }
+
+    migrated[taskType] = {
+      ...DEFAULT_AI_CONFIG.taskSettings[taskType],
+      enabled: current.enabled ?? DEFAULT_AI_CONFIG.taskSettings[taskType].enabled,
+      timeoutMs: current.timeoutMs ?? DEFAULT_AI_CONFIG.taskSettings[taskType].timeoutMs,
+      retryAttempts:
+        current.retryAttempts ?? DEFAULT_AI_CONFIG.taskSettings[taskType].retryAttempts,
+      temperature: current.temperature ?? DEFAULT_AI_CONFIG.taskSettings[taskType].temperature,
+      maxTokens: current.maxTokens ?? DEFAULT_AI_CONFIG.taskSettings[taskType].maxTokens,
+      dailyLimitOverride:
+        current.dailyLimitOverride ?? DEFAULT_AI_CONFIG.taskSettings[taskType].dailyLimitOverride,
+      allowSecondaryFallback:
+        current.allowSecondaryFallback ?? DEFAULT_AI_CONFIG.taskSettings[taskType].allowSecondaryFallback,
+    };
+  }
+
+  return migrated;
+}
+
 // Process-level latch so we only log the gemini->ollama override warning
 // once per Next.js dev/prod boot instead of on every config load.
 let warnedGeminiOverride = false;
 
 function applyEnvOverrides(config: AIConfig): AIConfig {
-  if (isLocalOnlyMode()) {
+  if (isLocalOnlyMode() && !shouldAllowCloudAIInLocal(config)) {
     const model = (process.env.OLLAMA_MODEL || LOCAL_OLLAMA_MODEL).trim();
     const baseUrl = normalizeBaseUrl(
       process.env.OLLAMA_BASE_URL || config.baseUrl || LOCAL_OLLAMA_BASE_URL
@@ -336,19 +501,21 @@ function applyEnvOverrides(config: AIConfig): AIConfig {
       );
     }
 
-    return {
-      ...config,
-      provider: "ollama",
-      mode: "local",
-      enabled: true,
-      baseUrl,
-      apiKey: null,
-      compatibilityMode: "ollama",
-      model,
-      fallbackModel: null,
-      taskSettings: Object.fromEntries(
-        AI_TASK_ORDER.map((taskType) => {
-          const task = config.taskSettings[taskType];
+      return {
+        ...config,
+        provider: "ollama",
+        mode: "local",
+        enabled: true,
+        baseUrl,
+        apiKey: null,
+        compatibilityMode: "ollama",
+        model,
+        fallbackModel: null,
+        hasPrimaryApiKey: false,
+        hasSecondaryApiKey: Boolean(readOpenRouterApiKey()),
+        taskSettings: Object.fromEntries(
+          AI_TASK_ORDER.map((taskType) => {
+            const task = config.taskSettings[taskType];
           const configuredTimeoutMs =
             typeof task.timeoutMs === "number" && task.timeoutMs > 0
               ? Math.min(task.timeoutMs, 120_000)
@@ -371,21 +538,68 @@ function applyEnvOverrides(config: AIConfig): AIConfig {
     };
   }
 
+  const geminiApiKey = readGeminiApiKey();
+  const openRouterApiKey = readOpenRouterApiKey();
+  const primaryProvider = config.provider;
+  const primaryMode = primaryProvider === "ollama" ? "local" : "cloud";
+  const primaryBaseUrl =
+    primaryProvider === "ollama"
+      ? normalizeBaseUrl(process.env.OLLAMA_BASE_URL || config.baseUrl || LOCAL_OLLAMA_BASE_URL)
+      : primaryProvider === "openrouter"
+        ? normalizeBaseUrl(process.env.OPENROUTER_BASE_URL || config.baseUrl || DEFAULT_SECONDARY_BASE_URL)
+        : DEFAULT_GEMINI_BASE_URL;
+  const primaryModel =
+    primaryProvider === "ollama"
+      ? process.env.OLLAMA_MODEL || config.model
+      : primaryProvider === "openrouter"
+        ? process.env.OPENROUTER_MODEL || config.model
+        : process.env.GEMINI_MODEL || config.model;
+  const primaryCompatibilityMode =
+    primaryProvider === "gemini"
+      ? "gemini"
+      : primaryProvider === "openrouter"
+        ? "openai"
+        : ((process.env.LOCAL_AI_COMPAT_MODE as AIConfig["compatibilityMode"]) ||
+          config.compatibilityMode ||
+          "ollama");
+  const primaryApiKey =
+    primaryProvider === "gemini"
+      ? geminiApiKey
+      : primaryProvider === "openrouter"
+        ? openRouterApiKey
+        : null;
+  const secondaryBaseUrl = normalizeBaseUrl(
+    process.env.OPENROUTER_BASE_URL || config.secondaryRuntime.baseUrl || DEFAULT_SECONDARY_BASE_URL
+  );
+  const secondaryModel = process.env.OPENROUTER_MODEL || config.secondaryRuntime.model;
+
   return {
     ...config,
-    baseUrl: normalizeBaseUrl(process.env.OLLAMA_BASE_URL || config.baseUrl),
-    apiKey: process.env.GEMINI_API_KEY || config.apiKey,
-    model: process.env.OLLAMA_MODEL || process.env.GEMINI_MODEL || config.model,
-    fallbackModel:
-      process.env.OLLAMA_FALLBACK_MODEL || config.fallbackModel || null,
-    compatibilityMode:
-      (process.env.LOCAL_AI_COMPAT_MODE as AIConfig["compatibilityMode"]) ||
-      config.compatibilityMode,
+    mode: primaryMode,
+    baseUrl: primaryBaseUrl,
+    apiKey: primaryApiKey,
+    compatibilityMode: primaryCompatibilityMode,
+    model: upgradeModel(primaryModel),
+    fallbackModel: config.fallbackModel ? upgradeModel(config.fallbackModel) : null,
+    hasPrimaryApiKey: Boolean(primaryApiKey),
+    hasSecondaryApiKey: Boolean(openRouterApiKey),
+    secondaryRuntime: {
+      ...config.secondaryRuntime,
+      mode: "cloud",
+      provider: "openrouter",
+      compatibilityMode: "openai",
+      baseUrl: secondaryBaseUrl,
+      model: upgradeModel(secondaryModel),
+      fallbackModel: config.secondaryRuntime.fallbackModel
+        ? upgradeModel(config.secondaryRuntime.fallbackModel)
+        : DEFAULT_SECONDARY_FALLBACK_MODEL,
+      enabled: Boolean(config.secondaryRuntime.enabled),
+    },
   };
 }
 
 function normalizeConfig(config?: Partial<AIConfig> | null): AIConfig {
-  const merged: AIConfig = {
+  let merged: AIConfig = {
     ...DEFAULT_AI_CONFIG,
     ...config,
     baseUrl: normalizeBaseUrl(config?.baseUrl),
@@ -396,8 +610,48 @@ function normalizeConfig(config?: Partial<AIConfig> | null): AIConfig {
     fallbackModel: config?.fallbackModel
       ? upgradeModel(config.fallbackModel)
       : DEFAULT_AI_CONFIG.fallbackModel,
+    monthlyBudgetGbp:
+      typeof config?.monthlyBudgetGbp === "number"
+        ? config.monthlyBudgetGbp
+        : DEFAULT_AI_CONFIG.monthlyBudgetGbp,
+    estimatedSpendGbp:
+      typeof config?.estimatedSpendGbp === "number"
+        ? config.estimatedSpendGbp
+        : DEFAULT_AI_CONFIG.estimatedSpendGbp,
+    allowCloudInLocalMode:
+      config?.allowCloudInLocalMode ?? DEFAULT_AI_CONFIG.allowCloudInLocalMode,
+    logPromptPreviews:
+      config?.logPromptPreviews ?? DEFAULT_AI_CONFIG.logPromptPreviews,
+    secondaryRuntime: {
+      ...DEFAULT_AI_CONFIG.secondaryRuntime,
+      ...(config?.secondaryRuntime || {}),
+      baseUrl: normalizeBaseUrl(config?.secondaryRuntime?.baseUrl || DEFAULT_AI_CONFIG.secondaryRuntime.baseUrl),
+      compatibilityMode:
+        config?.secondaryRuntime?.compatibilityMode || DEFAULT_AI_CONFIG.secondaryRuntime.compatibilityMode,
+      model:
+        upgradeModel(config?.secondaryRuntime?.model) || DEFAULT_AI_CONFIG.secondaryRuntime.model,
+      fallbackModel: config?.secondaryRuntime?.fallbackModel
+        ? upgradeModel(config.secondaryRuntime.fallbackModel)
+        : DEFAULT_AI_CONFIG.secondaryRuntime.fallbackModel,
+    },
     taskSettings: mergeTaskSettings(config?.taskSettings),
   };
+
+  if (shouldAllowCloudAIInLocal(merged) && isLegacyLocalAiConfig(merged)) {
+    merged = {
+      ...merged,
+      provider: "gemini",
+      mode: "cloud",
+      baseUrl: DEFAULT_GEMINI_BASE_URL,
+      compatibilityMode: "gemini",
+      model: DEFAULT_PRIMARY_MODEL,
+      fallbackModel: null,
+      taskSettings: mergeTaskSettings(migrateLegacyTaskSettings(config?.taskSettings)),
+      secondaryRuntime: {
+        ...DEFAULT_AI_CONFIG.secondaryRuntime,
+      },
+    };
+  }
 
   return applyEnvOverrides(merged);
 }
@@ -420,7 +674,7 @@ export async function saveAIConfig(
     }),
   });
 
-  await writeObject(ConfigFiles.AI_CONFIG, merged);
+  await writeObject(ConfigFiles.AI_CONFIG, sanitizeConfigForStorage(merged));
   return merged;
 }
 
@@ -439,6 +693,9 @@ export function getTaskRuntimeSettings(
   label: string;
   model: string;
   fallbackModel: string | null;
+  preferredRuntime: "primary" | "secondary";
+  dailyLimitOverride: number | null;
+  allowSecondaryFallback: boolean;
   timeoutMs: number;
   retryAttempts: number;
   temperature: number;
@@ -454,6 +711,12 @@ export function getTaskRuntimeSettings(
       taskConfig.fallbackModel === undefined
         ? config.fallbackModel
         : taskConfig.fallbackModel?.trim() || null,
+    preferredRuntime: taskConfig.preferredRuntime || "primary",
+    dailyLimitOverride:
+      typeof taskConfig.dailyLimitOverride === "number" && taskConfig.dailyLimitOverride > 0
+        ? taskConfig.dailyLimitOverride
+        : null,
+    allowSecondaryFallback: taskConfig.allowSecondaryFallback !== false,
     timeoutMs:
       typeof taskConfig.timeoutMs === "number" && taskConfig.timeoutMs > 0
         ? taskConfig.timeoutMs

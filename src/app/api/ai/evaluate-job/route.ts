@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { evaluateJobFit } from "@/lib/ai/tasks/evaluate-job";
+import { loadAIConfig } from "@/lib/ai/config";
 import { ParsedJobPostingSchema } from "@/lib/ai/schemas";
 import { callPythonAI, isPythonAIEnabled } from "@/lib/ai/python-sidecar";
 import type { AIMetadata, JobFitEvaluation, ParsedJobPosting } from "@/types";
@@ -42,7 +43,10 @@ export async function POST(request: NextRequest) {
     // Proxy to Python sidecar when the feature flag is on; fall back to
     // the TS implementation if the sidecar is unreachable or returns an
     // error so a broken sidecar never blocks the main app.
-    if (isPythonAIEnabled()) {
+    const aiConfig = await loadAIConfig();
+    const shouldUsePythonSidecar = isPythonAIEnabled() && aiConfig.provider === "ollama";
+
+    if (shouldUsePythonSidecar) {
       try {
         const result = await callPythonAI<
           { job: ParsedJobPosting },

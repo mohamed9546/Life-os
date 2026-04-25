@@ -199,6 +199,10 @@ export function AIControlRoom() {
           value={`${usage?.totalCalls ?? 0} / ${config.maxCallsPerDay}`}
         />
         <RuntimeStat
+          label="Monthly spend"
+          value={`£${(usage?.estimatedSpendGbp ?? config.estimatedSpendGbp ?? 0).toFixed(2)} / £${config.monthlyBudgetGbp.toFixed(2)}`}
+        />
+        <RuntimeStat
           label="Models discovered"
           value={`${health?.availableModels.length ?? 0}`}
         />
@@ -229,14 +233,12 @@ export function AIControlRoom() {
         </div>
         {config.provider === "gemini" ? (
           <div>
-            <label className="label">Gemini API key</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="Set via GEMINI_API_KEY env var or enter here"
-              value={config.apiKey || ""}
-              onChange={(event) => updateConfig({ apiKey: event.target.value || null })}
-            />
+            <label className="label">Gemini key source</label>
+            <div className="rounded-lg border border-surface-3 bg-surface-2 px-4 py-3 text-sm text-text-secondary">
+              {config.hasPrimaryApiKey
+                ? "Using GEMINI_API_KEY from environment. The key is not stored in repo data."
+                : "GEMINI_API_KEY is missing from the environment."}
+            </div>
           </div>
         ) : (
           <div>
@@ -272,6 +274,19 @@ export function AIControlRoom() {
             className="input"
             value={config.model}
             onChange={(event) => updateConfig({ model: event.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">Monthly budget (GBP)</label>
+          <input
+            className="input"
+            type="number"
+            min="1"
+            step="0.5"
+            value={config.monthlyBudgetGbp}
+            onChange={(event) =>
+              updateConfig({ monthlyBudgetGbp: parseFloat(event.target.value || "0") })
+            }
           />
         </div>
         <div>
@@ -345,6 +360,84 @@ export function AIControlRoom() {
               })
             }
           />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-surface-3 bg-surface-2 p-4 space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-text-primary">Secondary runtime</h3>
+            <p className="text-xs text-text-secondary mt-1">
+              Free hosted fallback for non-critical tasks and Gemini budget overflow.
+            </p>
+          </div>
+          <button
+            className={`btn-sm w-full sm:w-auto ${config.secondaryRuntime.enabled ? "btn-primary" : "btn-secondary"}`}
+            onClick={() =>
+              updateConfig({
+                secondaryRuntime: {
+                  ...config.secondaryRuntime,
+                  enabled: !config.secondaryRuntime.enabled,
+                },
+              })
+            }
+          >
+            {config.secondaryRuntime.enabled ? "Fallback enabled" : "Fallback disabled"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">OpenRouter key source</label>
+            <div className="rounded-lg border border-surface-3 bg-surface-1 px-4 py-3 text-sm text-text-secondary">
+              {config.hasSecondaryApiKey
+                ? "Using OPENROUTER_API_KEY from environment. The key is not stored in repo data."
+                : "OPENROUTER_API_KEY is missing from the environment."}
+            </div>
+          </div>
+          <div>
+            <label className="label">Secondary model</label>
+            <input
+              className="input"
+              value={config.secondaryRuntime.model}
+              onChange={(event) =>
+                updateConfig({
+                  secondaryRuntime: {
+                    ...config.secondaryRuntime,
+                    model: event.target.value,
+                  },
+                })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Secondary base URL</label>
+            <input
+              className="input"
+              value={config.secondaryRuntime.baseUrl}
+              onChange={(event) =>
+                updateConfig({
+                  secondaryRuntime: {
+                    ...config.secondaryRuntime,
+                    baseUrl: event.target.value,
+                  },
+                })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Allow cloud AI in local mode</label>
+            <select
+              className="input"
+              value={config.allowCloudInLocalMode ? "yes" : "no"}
+              onChange={(event) =>
+                updateConfig({ allowCloudInLocalMode: event.target.value === "yes" })
+              }
+            >
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -429,6 +522,38 @@ export function AIControlRoom() {
                     onChange={(event) =>
                       updateTask(taskType, {
                         fallbackModel: event.target.value || null,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="label">Preferred runtime</label>
+                  <select
+                    className="input"
+                    value={taskConfig.preferredRuntime || "primary"}
+                    onChange={(event) =>
+                      updateTask(taskType, {
+                        preferredRuntime: event.target.value as AIConfig["taskSettings"][AITaskType]["preferredRuntime"],
+                      })
+                    }
+                  >
+                    <option value="primary">Primary (Gemini)</option>
+                    <option value="secondary">Secondary (OpenRouter free)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Daily limit override</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    value={taskConfig.dailyLimitOverride ?? ""}
+                    placeholder={`${config.maxCallsPerTaskType}`}
+                    onChange={(event) =>
+                      updateTask(taskType, {
+                        dailyLimitOverride: event.target.value
+                          ? parseInt(event.target.value, 10)
+                          : null,
                       })
                     }
                   />

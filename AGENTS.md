@@ -26,6 +26,8 @@
 
 ## Important Gotchas
 - `LIFE_OS_LOCAL_ONLY=true` or `NEXT_PUBLIC_LIFE_OS_LOCAL_ONLY=true` forces preview-user mode and forces the AI config back to Ollama/local even if older cloud config or Supabase env exists.
+- Cloud AI keys must stay env-only. Do not persist `GEMINI_API_KEY`, OpenRouter keys, or other provider secrets into `data/*.json` or saved AI config.
+- AI logs should stay metadata-only for cloud tasks. Avoid restoring prompt previews or other user-content snippets into `ai-log.json`.
 - `USE_PYTHON_AI=true` only affects selected AI routes. `/api/ai/parse-job` and `/api/ai/evaluate-job` proxy to the Python sidecar when reachable, but both routes fall back to the TS implementation on sidecar failure.
 - The Python sidecar is stateless. Storage still happens on the TS side.
 - On Cloud Run without Supabase, `src/lib/storage/index.ts` writes to `/tmp/data`, which is ephemeral across restarts.

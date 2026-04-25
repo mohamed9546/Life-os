@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { parseJobPosting } from "@/lib/ai/tasks/parse-job";
+import { loadAIConfig } from "@/lib/ai/config";
 import { callPythonAI, isPythonAIEnabled } from "@/lib/ai/python-sidecar";
 import type { AIMetadata, ParsedJobPosting } from "@/types";
 
@@ -33,7 +34,10 @@ export async function POST(request: NextRequest) {
     // Proxy to Python sidecar when the feature flag is on.
     // On any sidecar failure we fall through to the TS implementation so
     // a broken sidecar never blocks the main app.
-    if (isPythonAIEnabled()) {
+    const aiConfig = await loadAIConfig();
+    const shouldUsePythonSidecar = isPythonAIEnabled() && aiConfig.provider === "ollama";
+
+    if (shouldUsePythonSidecar) {
       try {
         const result = await callPythonAI<
           { rawText: string; metadata?: Record<string, string> },
