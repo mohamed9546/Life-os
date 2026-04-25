@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  clearAllStoredJobs,
   getJobById,
   markApplied,
   rejectJob,
@@ -24,6 +25,21 @@ type JobRefreshAction =
   | "refresh-outreach"
   | "rerun-parse"
   | "rerun-fit";
+
+type JobAction =
+  | "track"
+  | "reject"
+  | "unreject"
+  | "apply"
+  | "refresh-intel"
+  | "refresh-contacts"
+  | "refresh-outreach"
+  | "rerun-parse"
+  | "rerun-fit"
+  | "change-stage"
+  | "set-followup"
+  | "update-notes"
+  | "reset-jobs";
 
 async function refreshJobEnrichment(
   id: string,
@@ -140,7 +156,7 @@ export async function POST(request: NextRequest) {
     const user = await requireAppUser();
     const body = await request.json();
     const { action, id, status, followUpDate, followUpNote, notes } = body as {
-      action?: string;
+      action?: JobAction;
       id?: string;
       status?: string;
       followUpDate?: string;
@@ -148,46 +164,59 @@ export async function POST(request: NextRequest) {
       notes?: string;
     };
 
-    if (!action || !id) {
+    if (!action) {
       return NextResponse.json(
-        { error: "action and id are required" },
+        { error: "action is required" },
         { status: 400 }
       );
     }
 
+    if (action !== "reset-jobs" && !id) {
+      return NextResponse.json(
+        { error: "id is required" },
+        { status: 400 }
+      );
+    }
+
+    const targetId = id || "";
+
     let success = false;
 
     switch (action) {
+      case "reset-jobs":
+        await clearAllStoredJobs(user.id);
+        success = true;
+        break;
       case "track":
-        success = await trackJob(id, user.id);
+        success = await trackJob(targetId, user.id);
         break;
       case "reject":
-        success = await rejectJob(id, user.id);
+        success = await rejectJob(targetId, user.id);
         break;
       case "unreject":
-        success = await unrejectJob(id, user.id);
+        success = await unrejectJob(targetId, user.id);
         break;
       case "apply":
-        success = await markApplied(id, user.id);
+        success = await markApplied(targetId, user.id);
         break;
       case "refresh-intel":
       case "refresh-contacts":
       case "refresh-outreach":
       case "rerun-parse":
       case "rerun-fit":
-        success = await refreshJobEnrichment(id, user.id, action);
+        success = await refreshJobEnrichment(targetId, user.id, action);
         break;
       case "change-stage":
         if (!status) {
           return NextResponse.json({ error: "status is required for change-stage" }, { status: 400 });
         }
-        success = await changeStage(id, status as any, user.id);
+        success = await changeStage(targetId, status as any, user.id);
         break;
       case "set-followup":
-        success = await setFollowUp(id, followUpDate || null, followUpNote || null, user.id);
+        success = await setFollowUp(targetId, followUpDate || null, followUpNote || null, user.id);
         break;
       case "update-notes":
-        success = await updateJobNotes(id, notes || "", user.id);
+        success = await updateJobNotes(targetId, notes || "", user.id);
         break;
       default:
         return NextResponse.json(
@@ -196,7 +225,7 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    if (success) {
+    if (success && id) {
       const updatedJob = await getJobById(id, user.id);
       if (updatedJob) {
         await syncJobsToNotionBestEffort(user.id, [updatedJob]);

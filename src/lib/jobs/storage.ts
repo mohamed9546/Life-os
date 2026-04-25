@@ -826,6 +826,42 @@ export async function updateJobNotes(
   );
 }
 
+export async function clearAllStoredJobs(userId?: string): Promise<void> {
+  const actorId = await resolveActorId(userId);
+  const supabase = getSupabase();
+
+  if (supabase) {
+    try {
+      const deleteJobs = supabase.from("jobs").delete().eq("user_id", actorId);
+      const deleteRawJobs = supabase.from("raw_jobs").delete().eq("user_id", actorId);
+      const [jobsResult, rawResult] = await Promise.all([deleteJobs, deleteRawJobs]);
+      if (jobsResult.error) throw jobsResult.error;
+      if (rawResult.error) throw rawResult.error;
+    } catch (err) {
+      warnDbFallback("job reset", err);
+    }
+  }
+
+  const scopedCollections = [
+    Collections.JOBS_RAW,
+    Collections.JOBS_ENRICHED,
+    Collections.JOBS_RANKED,
+    Collections.JOBS_REJECTED,
+    Collections.JOBS_INBOX,
+    Collections.JOB_INTEL,
+    Collections.APPLICATION_LOGS,
+    Collections.PROCESSED_GMAIL_ALERTS,
+  ] as const;
+
+  for (const collection of scopedCollections) {
+    const items = await readCollection<Array<{ userId?: string }>[number]>(collection);
+    await writeCollection(
+      collection,
+      items.filter((item) => item.userId && item.userId !== actorId)
+    );
+  }
+}
+
 export async function getAllDedupeKeys(userId?: string): Promise<Set<string>> {
   const [raw, enriched, inbox, ranked, rejected] = await Promise.all([
     getRawJobs(userId),

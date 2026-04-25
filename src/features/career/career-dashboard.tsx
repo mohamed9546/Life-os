@@ -67,8 +67,28 @@ export function CareerDashboard() {
   const [applicationLogs, setApplicationLogs] = useState<ApplicationLog[]>([]);
   const [recommendationPipelineRunning, setRecommendationPipelineRunning] = useState(false);
   const [recommendationPipelineError, setRecommendationPipelineError] = useState<string | null>(null);
+  const [resettingJobs, setResettingJobs] = useState(false);
   const jobs = useJobs();
   const pipeline = usePipeline();
+
+  const handleResetJobs = async () => {
+    if (
+      !window.confirm(
+        "Clear all fetched jobs, inbox items, rankings, tracked items, and Gmail alert history for a fresh start?"
+      )
+    ) {
+      return;
+    }
+
+    setResettingJobs(true);
+    try {
+      await jobs.resetJobs();
+      setSelectedJob(null);
+      await refreshApplicationLogs();
+    } finally {
+      setResettingJobs(false);
+    }
+  };
 
   const refreshApplicationLogs = async () => {
     try {
@@ -164,7 +184,7 @@ export function CareerDashboard() {
   return (
     <div className="space-y-5">
       {/* Hero */}
-      <CareerHero jobs={jobs} pipeline={pipeline} />
+        <CareerHero jobs={jobs} pipeline={pipeline} onResetJobs={() => void handleResetJobs()} resettingJobs={resettingJobs} />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -277,9 +297,13 @@ export function CareerDashboard() {
 function CareerHero({
   jobs,
   pipeline,
+  onResetJobs,
+  resettingJobs,
 }: {
   jobs: ReturnType<typeof useJobs>;
   pipeline: ReturnType<typeof usePipeline>;
+  onResetJobs: () => void;
+  resettingJobs: boolean;
 }) {
   return (
     <Panel tone="hero" className="relative overflow-hidden">
@@ -324,6 +348,9 @@ function CareerHero({
             disabled={pipeline.running}
           >
             Fetch Only
+          </ActionButton>
+          <ActionButton variant="ghost" onClick={onResetJobs} disabled={pipeline.running || resettingJobs || jobs.loading}>
+            {resettingJobs ? "Clearing..." : "Start Fresh"}
           </ActionButton>
           <ActionButton variant="ghost" onClick={jobs.refresh} disabled={jobs.loading}>
             <RefreshCw size={13} />

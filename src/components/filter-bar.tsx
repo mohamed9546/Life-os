@@ -9,6 +9,7 @@ import { getContactFreshness, hasOutreachDraft } from "@/lib/jobs/selectors";
 export interface JobFilters {
   query: string;
   source: string;
+  fetchedWindow: string;
   roleTrack: string;
   remoteType: string;
   employmentType: string;
@@ -20,6 +21,7 @@ export interface JobFilters {
 export const DEFAULT_FILTERS: JobFilters = {
   query: "",
   source: "all",
+  fetchedWindow: "all",
   roleTrack: "all",
   remoteType: "all",
   employmentType: "all",
@@ -52,6 +54,7 @@ export function FilterBar({
   const hasFilters =
     filters.query.trim().length > 0 ||
     filters.source !== "all" ||
+    filters.fetchedWindow !== "all" ||
     filters.roleTrack !== "all" ||
     filters.remoteType !== "all" ||
     filters.employmentType !== "all" ||
@@ -79,6 +82,17 @@ export function FilterBar({
             {s}
           </option>
         ))}
+      </select>
+
+      <select
+        className="input w-36 text-xs"
+        value={filters.fetchedWindow}
+        onChange={(e) => update({ fetchedWindow: e.target.value })}
+      >
+        <option value="all">Any fetch date</option>
+        <option value="3d">Last 3 days</option>
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
       </select>
 
       <select
@@ -205,6 +219,12 @@ export function applyFilters(
     }
     if (filters.source !== "all" && job.raw.source !== filters.source)
       return false;
+    if (filters.fetchedWindow !== "all") {
+      const days = parseInt(filters.fetchedWindow.replace(/\D/g, ""), 10);
+      const fetchedAt = new Date(job.raw.fetchedAt).getTime();
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      if (Number.isNaN(fetchedAt) || fetchedAt < cutoff) return false;
+    }
     if (
       filters.roleTrack !== "all" &&
       job.parsed?.data?.roleTrack !== filters.roleTrack

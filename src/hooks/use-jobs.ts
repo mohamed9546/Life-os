@@ -85,11 +85,11 @@ export function useJobs() {
   }, [refresh]);
 
   const performAction = useCallback(
-    async (action: string, id: string) => {
+    async (action: string, id?: string) => {
       const response = await fetch("/api/jobs/actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, id }),
+        body: JSON.stringify({ action, ...(id ? { id } : {}) }),
       });
 
       if (!response.ok) {
@@ -138,5 +138,6 @@ export function useJobs() {
     refreshJobOutreach: (id: string) => performAction("refresh-outreach", id),
     rerunJobParse: (id: string) => performAction("rerun-parse", id),
     rerunJobFit: (id: string) => performAction("rerun-fit", id),
+    resetJobs: () => performAction("reset-jobs"),
   };
 }
