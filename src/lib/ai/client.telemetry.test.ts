@@ -70,6 +70,7 @@ import { callAI } from "./client";
 describe("ai client telemetry resilience", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(recordAiTelemetryEvent).mockRejectedValue(new Error("telemetry write failed"));
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -104,5 +105,42 @@ describe("ai client telemetry resilience", () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ title: "Clinical Trial Assistant" });
+  });
+
+  it("records provider/model/task metadata for failures without prompt or response fields", async () => {
+    vi.mocked(recordAiTelemetryEvent).mockResolvedValue(undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message:
+                "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day",
+              code: 429,
+              metadata: { headers: { "X-RateLimit-Limit": "50" } },
+            },
+          }),
+          { status: 429, headers: { "Content-Type": "application/json" } }
+        )
+      )
+    );
+
+    const result = await callAI({
+      taskType: "parse-job",
+      prompt: "This prompt text must not be stored.",
+      rawInput: { recruiterMessage: "must not leak" },
+      callingModule: "career",
+      sensitivityLevel: "public",
+    });
+
+    expect(result.success).toBe(false);
+    const telemetryCall = vi.mocked(recordAiTelemetryEvent).mock.calls.at(-1)?.[0] as any;
+    expect(telemetryCall.success).toBe(false);
+    expect(telemetryCall.taskType).toBe("parse-job");
+    expect(telemetryCall.provider).toBe("gemini");
+    expect(telemetryCall.model).toBe("gemini-2.5-flash-lite");
+    expect(telemetryCall.prompt).toBeUndefined();
+    expect(telemetryCall.response).toBeUndefined();
   });
 });

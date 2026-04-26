@@ -20,6 +20,7 @@ import {
   getAiTelemetryEvents,
   getAiTelemetrySummary,
   recordAiTelemetryEvent,
+  sanitizeTelemetryErrorSummary,
 } from "./telemetry";
 
 describe("ai telemetry domain", () => {
@@ -80,6 +81,26 @@ describe("ai telemetry domain", () => {
     expect(events[0].success).toBe(false);
     expect(events[0].errorType).toBe("timeout");
     expect(events[0].errorSummary).toContain("timed out");
+  });
+
+  it("sanitises raw provider 429 json into a short safe summary", () => {
+    const summary = sanitizeTelemetryErrorSummary({
+      errorType: "runtime_error",
+      errorSummary:
+        'AI runtime returned 429: {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day","code":429,"metadata":{"headers":{"X-RateLimit-Limit":"50","X-RateLimit-Remaining":"0"}}}}',
+    });
+
+    expect(summary).toBe("Rate limit exceeded for AI provider route.");
+  });
+
+  it("truncates long safe local errors", () => {
+    const summary = sanitizeTelemetryErrorSummary({
+      errorType: "runtime_error",
+      errorSummary: `AI task \"chat\" is disabled in settings ${"x".repeat(400)}`,
+    });
+
+    expect(summary).toContain('AI task "chat" is disabled in settings');
+    expect(summary!.length).toBeLessThanOrEqual(200);
   });
 
   it("caps telemetry retention at 1000 events", async () => {

@@ -9,6 +9,7 @@ import {
 
 const AI_TELEMETRY_RETENTION = 1000;
 const AI_TELEMETRY_METADATA_VERSION = 1;
+const AI_TELEMETRY_ERROR_SUMMARY_MAX = 200;
 
 let writeLock: Promise<void> = Promise.resolve();
 
@@ -44,6 +45,44 @@ function trimString(value: string | null | undefined, max = 240): string | null 
   const trimmed = value.trim();
   if (!trimmed) return null;
   return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+}
+
+export function sanitizeTelemetryErrorSummary(input: {
+  errorType?: string | null;
+  errorSummary?: string | null;
+}): string | null {
+  const raw = trimString(input.errorSummary, AI_TELEMETRY_ERROR_SUMMARY_MAX);
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.toLowerCase();
+
+  if (
+    input.errorType === "timeout" ||
+    /timed out|timeout|aborterror|airequesttimeouterror/.test(normalized)
+  ) {
+    return "AI runtime timed out.";
+  }
+
+  if (/429|rate.?limit|too many requests|free-models-per-day|x-ratelimit/i.test(raw)) {
+    return "Rate limit exceeded for AI provider route.";
+  }
+
+  if (/401|403|unauthori[sz]ed|forbidden|authentication|access denied/i.test(normalized)) {
+    return "Provider authentication or access error.";
+  }
+
+  // Keep concise local/runtime errors, but strip noisy provider payloads.
+  if (
+    /disabled in settings|no ai runtime is available|secondary ai runtime is not available|monthly ai budget reached|daily ai call limit reached/i.test(
+      normalized
+    )
+  ) {
+    return trimString(raw, AI_TELEMETRY_ERROR_SUMMARY_MAX);
+  }
+
+  return "AI runtime error.";
 }
 
 function toNullableNumber(value: number | null | undefined): number | null {
@@ -125,7 +164,10 @@ function sanitizeTelemetryEntry(input: RecordAiTelemetryInput): AITelemetryEntry
     latencyMs: Math.max(0, Math.round(input.latencyMs || 0)),
     success: Boolean(input.success),
     errorType: trimString(input.errorType, 80),
-    errorSummary: trimString(input.errorSummary, 240),
+    errorSummary: sanitizeTelemetryErrorSummary({
+      errorType: input.errorType,
+      errorSummary: input.errorSummary,
+    }),
     fallbackUsed: Boolean(input.fallbackUsed),
     fallbackReason: trimString(input.fallbackReason, 160),
     inputTokenEstimate: inputTokens,
