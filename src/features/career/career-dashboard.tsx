@@ -42,6 +42,7 @@ import { OpenCodeAppsStatusPanel } from "./open-code-apps-status";
 // ---- Types ----
 
 type Section = "analyst" | "inbox" | "pipeline";
+type ShortlistView = "primary" | "secondary" | "all";
 
 const PRIORITY_CHIP: Record<string, { tone: "success" | "warning" | "info" | "danger"; label: string }> = {
   high:   { tone: "success", label: "High" },
@@ -1018,6 +1019,7 @@ function InboxSection({
   onSelect: (j: EnrichedJob | null) => void;
 }) {
   const [filters, setFilters] = useState<JobFilters>(DEFAULT_FILTERS);
+  const [shortlistView, setShortlistView] = useState<ShortlistView>("primary");
 
   const sorted = useMemo(
     () =>
@@ -1038,7 +1040,28 @@ function InboxSection({
     );
   }, [sorted]);
 
-  const filtered = useMemo(() => applyFilters(sorted, filters), [sorted, filters]);
+  const laneFiltered = useMemo(() => {
+    if (shortlistView === "all") {
+      return sorted;
+    }
+
+    if (shortlistView === "primary") {
+      return sorted.filter(isPrimaryCtaShortlistJob);
+    }
+
+    return sorted.filter(isSecondaryShortlistJob);
+  }, [shortlistView, sorted]);
+
+  const filtered = useMemo(() => applyFilters(laneFiltered, filters), [laneFiltered, filters]);
+
+  const shortlistCounts = useMemo(
+    () => ({
+      primary: sorted.filter(isPrimaryCtaShortlistJob).length,
+      secondary: sorted.filter(isSecondaryShortlistJob).length,
+      all: sorted.length,
+    }),
+    [sorted]
+  );
 
   if (jobs.loading) {
     return <LoadingState label="Loading ranked jobs…" className="min-h-[300px]" />;
@@ -1046,6 +1069,42 @@ function InboxSection({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <button
+          className={cn(
+            "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+            shortlistView === "primary"
+              ? "bg-violet-500/15 text-violet-200"
+              : "bg-white/5 text-slate-400 hover:text-slate-200"
+          )}
+          onClick={() => setShortlistView("primary")}
+        >
+          CTA-first {shortlistCounts.primary}
+        </button>
+        <button
+          className={cn(
+            "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+            shortlistView === "secondary"
+              ? "bg-blue-500/15 text-blue-200"
+              : "bg-white/5 text-slate-400 hover:text-slate-200"
+          )}
+          onClick={() => setShortlistView("secondary")}
+        >
+          Secondary lanes {shortlistCounts.secondary}
+        </button>
+        <button
+          className={cn(
+            "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+            shortlistView === "all"
+              ? "bg-slate-500/20 text-white"
+              : "bg-white/5 text-slate-400 hover:text-slate-200"
+          )}
+          onClick={() => setShortlistView("all")}
+        >
+          All ranked {shortlistCounts.all}
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <JobFilterBar
           filters={filters}
@@ -1053,7 +1112,7 @@ function InboxSection({
           availableSources={sources}
           availableRoleTracks={availableRoleTracks}
           jobCount={filtered.length}
-          totalCount={sorted.length}
+          totalCount={laneFiltered.length}
         />
       </div>
 
@@ -1062,6 +1121,11 @@ function InboxSection({
           title="No ranked jobs yet"
           description="Run the pipeline to pull jobs from enabled sources and evaluate fit."
           action={<ActionButton variant="secondary" onClick={jobs.refresh}>Refresh</ActionButton>}
+        />
+      ) : laneFiltered.length === 0 ? (
+        <EmptyState
+          title="No jobs in this shortlist view"
+          description="Switch to secondary lanes or all ranked jobs to inspect the broader pipeline."
         />
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -1094,6 +1158,45 @@ function InboxSection({
       )}
     </div>
   );
+}
+
+const CTA_PRIMARY_TERMS = [
+  "clinical trial assistant",
+  "clinical trials assistant",
+  "clinical trial associate",
+  "clinical research assistant",
+  "clinical research coordinator",
+  "trial coordinator",
+  "clinical study assistant",
+  "clinical study coordinator",
+  "clinical operations assistant",
+  "trial administrator",
+  "study start-up",
+  "study startup",
+  "site activation",
+  "tmf",
+  "etmf",
+  "ctms",
+];
+
+function isPrimaryCtaShortlistJob(job: EnrichedJob): boolean {
+  const parsed = job.parsed?.data;
+  const title = (parsed?.title || job.raw.title || "").toLowerCase();
+  const summary = (parsed?.summary || job.raw.description || "").toLowerCase();
+  const keywords = [...(parsed?.keywords || []), ...(parsed?.mustHaves || [])]
+    .join(" ")
+    .toLowerCase();
+
+  const hasPrimarySignal = CTA_PRIMARY_TERMS.some(
+    (term) => title.includes(term) || summary.includes(term) || keywords.includes(term)
+  );
+
+  return parsed?.roleTrack === "clinical" && hasPrimarySignal;
+}
+
+function isSecondaryShortlistJob(job: EnrichedJob): boolean {
+  const roleTrack = job.parsed?.data?.roleTrack || "other";
+  return ["qa", "regulatory", "medinfo"].includes(roleTrack);
 }
 
 function RankedJobCard({

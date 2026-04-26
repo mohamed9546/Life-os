@@ -1,98 +1,101 @@
-# Life OS Application Explanation
+# Life OS: Complete Application Explanation
 
-## What This Application Is
+## Purpose
 
-Life OS is a local-first personal operating system built around one main idea: turn personal execution into a structured, searchable, automatable system.
+Life OS is a local-first operating system for personal execution, with a strong emphasis on career transition workflow.
 
-In practice, the application combines:
+Its current centre of gravity is the **career pipeline**: discover jobs, filter junk, parse roles, score fit, rank the shortlist, support manual application review, and maintain follow-up cadence.
 
-- a **career pipeline** for finding, ranking, and managing jobs
-- an **AI analysis layer** for parsing jobs, evaluating fit, generating career outputs, and summarising information
-- **life operations modules** for routines, goals, journal, weekly review, and decision tracking
-- an **automation layer** for scheduled work, Gmail-based job discovery, and background maintenance
-- a new **OpenCode toolkit layer** for daily workflow helpers such as shutdown planning, next-action picking, application follow-up drafting, regulatory watch digests, and paper capture
+Around that core, the app also provides:
 
-The app is designed to work even without cloud infrastructure. When Supabase is unavailable, it stores its state in local JSON files under `data/*.json`.
+- AI task routing and structured generation
+- Gmail-assisted job discovery
+- routines, journal, goals, decisions, money, and weekly review modules
+- worker-based automation
+- an OpenCode toolkit layer for fast operational actions and knowledge capture
 
-## Core Product Shape
+The application is designed to keep working without cloud infrastructure. When Supabase is unavailable, state is stored locally in `data/*.json`.
 
-At a high level, the application has five major surfaces:
+## Main Surfaces
 
-1. **Career**
-2. **Life OS**
-3. **Money / Decisions / Routines / Goals / Journal / Learning**
-4. **Automation**
-5. **Settings / Admin Integrations**
-
-The most important operational pages today are:
+The most important pages are:
 
 - [`/career`](../src/app/career/page.tsx)
-- [`/settings`](../src/app/settings/page.tsx)
 - [`/life-os`](../src/app/life-os/page.tsx)
 - [`/automation`](../src/app/automation/page.tsx)
+- [`/settings`](../src/app/settings/page.tsx)
+
+You can think of the app as five stacked layers:
+
+1. **Career execution**
+2. **AI runtime and task routing**
+3. **Life OS reflection and planning**
+4. **Automation and worker control**
+5. **OpenCode toolkit and local operator workflows**
 
 ## Technology Stack
 
-The application is built with:
+The application uses:
 
-- **Next.js 14 App Router** for UI and API routes
-- **TypeScript** throughout the app
-- **Tailwind CSS** for styling
-- **React client components** for dashboards and operational panels
-- **Local JSON storage** under `data/*.json`
-- **Optional Supabase** for persistent remote storage
-- **Optional Python FastAPI sidecar** for some AI tasks
-- **Multiple AI runtimes**:
-  - Ollama for local models
-  - Gemini direct API for cloud primary inference
-  - OpenRouter as an optional fallback runtime
+- **Next.js 14 App Router**
+- **React + TypeScript**
+- **Tailwind CSS**
+- **Local JSON storage** via `data/*.json`
+- **Optional Supabase** as a remote persistence layer
+- **Optional Python FastAPI sidecar** for selected AI tasks
+- **AI runtimes**:
+  - Ollama for local inference
+  - Gemini direct API as the primary cloud runtime
+  - OpenRouter as optional fallback
 
-Relevant files:
+Key infrastructure files:
 
 - [`src/lib/storage/index.ts`](../src/lib/storage/index.ts)
 - [`src/lib/ai/client.ts`](../src/lib/ai/client.ts)
 - [`src/lib/ai/config.ts`](../src/lib/ai/config.ts)
 - [`python-ai/`](../python-ai/)
 
-## Main Functional Areas
+## Career System
 
-## 1. Career System
+## What the Career System Does
 
 The Career system is the flagship workflow.
 
-Its job is to:
+It is responsible for:
 
-- discover jobs from many sources
-- deduplicate them
-- parse them into structured data
-- evaluate strategic fit against the user profile
-- rank them
-- expose them in inbox / pipeline views
-- support manual action, follow-up, outreach, and application review
+- pulling jobs from multiple sources
+- deduplicating and storing raw source records
+- rejecting obvious off-target roles early
+- parsing jobs into structured data
+- evaluating fit against the user profile
+- ranking the shortlist
+- exposing inbox and tracked pipeline views
+- supporting manual application review, contact strategy, outreach, and follow-up
 
 Main UI:
 
 - [`src/features/career/career-dashboard.tsx`](../src/features/career/career-dashboard.tsx)
 
-Supporting components:
+Important support components:
 
 - [`src/components/job-detail-panel.tsx`](../src/components/job-detail-panel.tsx)
 - [`src/components/filter-bar.tsx`](../src/components/filter-bar.tsx)
 - [`src/features/career/open-code-apps-status.tsx`](../src/features/career/open-code-apps-status.tsx)
 
-### Career Data Model
+## Core Job Types
 
-The job pipeline revolves around two major objects:
+The core types are defined in:
+
+- [`src/types/index.ts`](../src/types/index.ts)
+
+The two most important types are:
 
 - `RawJobItem`
 - `EnrichedJob`
 
-Definitions live in:
+`RawJobItem` is a fetched source record.
 
-- [`src/types/index.ts`](../src/types/index.ts)
-
-`RawJobItem` is the fetched source record.
-`EnrichedJob` wraps the raw record plus:
+`EnrichedJob` wraps that raw record plus:
 
 - parsed AI output
 - fit evaluation
@@ -101,24 +104,24 @@ Definitions live in:
 - outreach strategy
 - follow-up metadata
 
-### Job Discovery Sources
+## Source Adapters
 
-The application supports multiple source adapters under:
+Source adapters live under:
 
 - [`src/lib/jobs/sources/`](../src/lib/jobs/sources/)
 
-Examples include:
+Current examples include:
 
 - Adzuna
 - Reed
 - Jobs.ac.uk
 - Totaljobs
-- LinkedIn public fetches
-- Remotive
-- Arbeitnow
-- Himalayas
+- LinkedIn public search
 - Guardian Jobs
 - We Work Remotely
+- Arbeitnow
+- Remotive
+- Himalayas
 - Greenhouse
 - Lever
 - NHS Jobs
@@ -127,93 +130,119 @@ Registry:
 
 - [`src/lib/jobs/sources/index.ts`](../src/lib/jobs/sources/index.ts)
 
-Default search posture:
+## CTA-First Search Posture
+
+The system is now deliberately **CTA-first**.
+
+That means primary emphasis is placed on roles like:
+
+- Clinical Trial Assistant
+- Clinical Trials Assistant
+- Clinical Trial Associate
+- Clinical Research Assistant
+- Clinical Research Coordinator
+- Trial Coordinator
+- Clinical Operations Assistant
+- Study Start-Up Assistant / Coordinator
+- Site Activation Assistant / Coordinator
+- Trial Administrator
+
+Default search posture and saved-search generation live in:
 
 - [`src/lib/jobs/sources/types.ts`](../src/lib/jobs/sources/types.ts)
 - [`src/lib/career/defaults.ts`](../src/lib/career/defaults.ts)
 
-The current search posture is deliberately **CTA-first**.
-That means Clinical Trial Assistant and close clinical-trial-support aliases are prioritised above secondary QA/regulatory tracks.
+QA, regulatory, and medinfo are still supported, but are treated as secondary lanes rather than first-choice visibility.
 
-### Job Pipeline Flow
+## Ranked Shortlist Behaviour
 
-The main job pipeline entrypoint is:
+The ranked inbox now has explicit visibility modes:
+
+- **CTA-first**
+- **Secondary lanes**
+- **All ranked**
+
+That logic lives in:
+
+- [`src/features/career/career-dashboard.tsx`](../src/features/career/career-dashboard.tsx)
+
+The default intent is:
+
+- show CTA and close clinical-trial-support jobs first
+- keep QA / regulatory / medinfo available but not dominant
+- preserve access to the broader ranked pool when needed
+
+## Pipeline Flow
+
+Primary API entrypoint:
 
 - [`src/app/api/jobs/pipeline/route.ts`](../src/app/api/jobs/pipeline/route.ts)
 
-It calls:
+Pipeline orchestration:
 
 - [`src/lib/jobs/pipeline/index.ts`](../src/lib/jobs/pipeline/index.ts)
 
-Pipeline stages:
+High-level stages:
 
-1. Fetch jobs from enabled sources
-2. Optionally import Gmail-discovered jobs
-3. Filter and deduplicate raws
-4. Run relevance gating
-5. Parse jobs into structured data
+1. Fetch jobs from enabled source adapters
+2. Import Gmail-derived job alerts when enabled
+3. Filter and deduplicate raw jobs
+4. Run strict relevance gating
+5. Parse jobs into structured fields
 6. Evaluate fit against the user profile
-7. Save inbox / rejected / ranked collections
-8. Optionally run recommendation / follow-up flows
+7. Save inbox / ranked / rejected state
+8. Optionally continue into application-review automation
 
-Key files:
+Core pipeline files:
 
 - [`src/lib/jobs/pipeline/index.ts`](../src/lib/jobs/pipeline/index.ts)
 - [`src/lib/jobs/pipeline/enrich.ts`](../src/lib/jobs/pipeline/enrich.ts)
 - [`src/lib/jobs/pipeline/relevance.ts`](../src/lib/jobs/pipeline/relevance.ts)
 - [`src/lib/jobs/pipeline/rank.ts`](../src/lib/jobs/pipeline/rank.ts)
 
-### Relevance Gating
+## Relevance Gating and Junk Rejection
 
-Before a job becomes useful UI data, the app now applies stronger domain-specific relevance filtering.
+The app now rejects or heavily penalises broad categories of off-target roles before they become useful shortlist items.
 
-This is important because broad public sources often return unrelated jobs.
+Examples include:
 
-The relevance gate now tries to block or heavily penalise:
-
-- tax / accounting roles
-- offshore / oil & gas roles
-- drivers / logistics / industrial operator roles
-- hospitality and food & beverage roles
-- aviation security roles
-- IT support / helpdesk roles
-- radiography and unrelated allied-health execution roles
-- obviously senior / leadership roles
+- tax / finance / accounting
+- offshore / oil & gas / rig-moving
+- hospitality and food & beverage
+- aviation security
+- IT support / helpdesk
+- driver / logistics / industrial operator roles
+- unrelated senior / leadership roles
+- radiography and unrelated allied-health delivery roles
 
 This logic lives in:
 
 - [`src/lib/jobs/pipeline/relevance.ts`](../src/lib/jobs/pipeline/relevance.ts)
 
-### Parsing and Fit Evaluation
+This was added because broad public sources were previously allowing too many false positives into the ranked inbox.
 
-The AI parsing task converts job text into structured fields such as:
+## Parsing and Fit Evaluation
 
-- title
-- company
-- location
-- employment type
-- remote type
-- role track
-- must-haves
-- keywords
-- summary
-
-Parser:
+Structured parsing task:
 
 - [`src/lib/ai/tasks/parse-job.ts`](../src/lib/ai/tasks/parse-job.ts)
 
-Fit evaluation:
+Fit evaluation task:
 
 - [`src/lib/ai/tasks/evaluate-job.ts`](../src/lib/ai/tasks/evaluate-job.ts)
 
-Both tasks support fallback behaviour if AI calls fail.
-The parser especially has deterministic fallback logic to keep the pipeline resilient.
+Important recent improvements:
 
-### Gmail-Based Job Discovery
+- synthetic prefixes like `Title:` are normalised away
+- `Remote: unknown` no longer incorrectly marks roles as remote
+- fallback matching is stricter for short acronyms
+- CTA aliases are prioritised more explicitly
 
-The app can scan Gmail for job alert emails.
+Both tasks still retain fallback behaviour so the system stays operational during AI failures.
 
-Relevant files:
+## Gmail-Assisted Discovery
+
+Gmail job alert handling lives in:
 
 - [`src/lib/applications/gmail.ts`](../src/lib/applications/gmail.ts)
 - [`src/app/api/gmail/sync-alerts/route.ts`](../src/app/api/gmail/sync-alerts/route.ts)
@@ -221,42 +250,42 @@ Relevant files:
 Current behaviour:
 
 - scans the last `3d`
-- looks for job-alert-like emails and CTA-relevant terms
-- detects sources like LinkedIn / Indeed / Totaljobs / IrishJobs / NHS Jobs
-- attempts AI extraction of job records from the email body
+- detects job-alert-like emails
+- looks for CTA-relevant signals
+- identifies alert sources such as LinkedIn, Indeed, Totaljobs, IrishJobs, and NHS Jobs
+- uses AI extraction first to pull one or more jobs from an email body
 - falls back to source-specific heuristic parsing if needed
 
-This Gmail discovery now feeds both:
+This Gmail discovery is now integrated into:
 
 - manual pipeline runs
 - recommendation pipeline runs
-- worker-based full pipeline runs
+- worker full-pipeline runs
 
-### Application / Recommendation Flow
+## Application Review Flow
 
-The app includes a review-first application automation system.
-
-Main orchestration:
+Review-first application orchestration:
 
 - [`src/lib/applications/auto-apply.ts`](../src/lib/applications/auto-apply.ts)
 
 What it does:
 
 - identifies eligible jobs
+- applies stricter safety gating before review drafting
 - selects or tailors a CV
-- drafts outreach or application content
-- creates Gmail review drafts where appropriate
-- writes application log entries
+- drafts outreach or application-review material
+- creates Gmail review drafts where relevant
+- records application log entries
 
-It is currently not a full autonomous submitter. It is designed as a **manual review pipeline with assistance**, not silent blind auto-apply.
+This is still a **manual review system**, not a silent autonomous submitter.
 
-Logs and profile state:
+Application log storage:
 
 - [`src/lib/applications/storage.ts`](../src/lib/applications/storage.ts)
 
-## 2. AI Runtime Layer
+## AI Runtime Layer
 
-The app has a centralised AI runtime router that decides which model/provider executes each task.
+The app has a central AI routing layer that decides which runtime executes which task.
 
 Core files:
 
@@ -267,37 +296,28 @@ Supported runtime types:
 
 - Ollama local runtime
 - Gemini direct API runtime
-- OpenRouter secondary runtime fallback
+- OpenRouter secondary fallback runtime
 
-Important behaviour:
-
-- the app can use task-specific runtime preferences
-- individual tasks can prefer primary or secondary runtime
-- some tasks are structured JSON tasks
-- the system records runtime metadata, not just free-form text
-
-The AI system is used for:
+This AI layer powers:
 
 - job parsing
 - fit scoring
+- salary lookup
 - interview prep
 - cover letters
-- salary lookup
 - skill-gap analysis
 - transaction categorisation
-- weekly review summaries
+- weekly review generation
 - morning briefings
-- OpenCode Gmail alert extraction helper tasks
+- Gmail alert extraction
 
-## 3. Life OS Surface
+## Life OS Surface
 
-The Life OS surface is the broader personal operating system layer.
-
-Main UI:
+Main Life OS dashboard:
 
 - [`src/features/life-os/life-os-dashboard.tsx`](../src/features/life-os/life-os-dashboard.tsx)
 
-It currently contains:
+It currently includes:
 
 - weekly review
 - month review
@@ -307,9 +327,7 @@ It currently contains:
 - task prioritiser
 - export
 
-The Life OS area helps convert stored system state into a reflective or planning view.
-
-### Weekly Review
+## Weekly Review
 
 API:
 
@@ -319,95 +337,89 @@ Logic:
 
 - [`src/lib/life-os/weekly-review.ts`](../src/lib/life-os/weekly-review.ts)
 
-Inputs include:
+It summarises the current state across:
 
 - jobs
-- money data
+- money
 - decisions
 - routines
 
-### Morning Briefing
+## Month Review
 
-API:
-
-- [`src/app/api/life-os/morning-briefing/route.ts`](../src/app/api/life-os/morning-briefing/route.ts)
-
-This generates an operational start-of-day summary from current state.
-
-### Month Review
-
-New OpenCode-backed API:
+OpenCode-backed month review API:
 
 - [`src/app/api/opencode/month-review/route.ts`](../src/app/api/opencode/month-review/route.ts)
 
-New UI:
+UI:
 
 - [`src/features/life-os/opencode-month-review.tsx`](../src/features/life-os/opencode-month-review.tsx)
 
-The month review aggregates:
+It aggregates:
 
-- application state
+- application operations
 - deep work
 - journal activity
-- paper notes
+- paper-note capture
 - regulatory digests
 - shutdown entries
 
-## 4. Routines, Goals, Journal, and Deep Work
+## Routines, Journal, Goals, Deep Work
 
-These modules hold the self-management layer of the system.
+These modules are the self-management layer of the app.
 
-### Routines
+Relevant files:
 
-- [`src/features/routines/routines-dashboard.tsx`](../src/features/routines/routines-dashboard.tsx)
-- [`src/features/routines/deep-work-tracker.tsx`](../src/features/routines/deep-work-tracker.tsx)
-- [`src/features/routines/habit-heatmap.tsx`](../src/features/routines/habit-heatmap.tsx)
+- routines dashboard: [`src/features/routines/routines-dashboard.tsx`](../src/features/routines/routines-dashboard.tsx)
+- deep work tracker: [`src/features/routines/deep-work-tracker.tsx`](../src/features/routines/deep-work-tracker.tsx)
+- habit heatmap: [`src/features/routines/habit-heatmap.tsx`](../src/features/routines/habit-heatmap.tsx)
+- journal API: [`src/app/api/journal/route.ts`](../src/app/api/journal/route.ts)
+- journal UI: [`src/features/journal/journal-dashboard.tsx`](../src/features/journal/journal-dashboard.tsx)
+- deep work API: [`src/app/api/deep-work/route.ts`](../src/app/api/deep-work/route.ts)
 
-### Goals
+## Automation Layer
 
-- [`src/features/goals/goals-dashboard.tsx`](../src/features/goals/goals-dashboard.tsx)
+The Automation page is the operational control room.
 
-### Journal
+Page:
 
-API:
+- [`src/app/automation/page.tsx`](../src/app/automation/page.tsx)
 
-- [`src/app/api/journal/route.ts`](../src/app/api/journal/route.ts)
+Dashboard:
 
-UI:
+- [`src/features/automation/automation-dashboard.tsx`](../src/features/automation/automation-dashboard.tsx)
 
-- [`src/features/journal/journal-dashboard.tsx`](../src/features/journal/journal-dashboard.tsx)
+This surface combines:
 
-### Deep Work
+- worker quick actions
+- source runtime health
+- AI runtime health
+- the new OpenCode control panel
 
-API:
+## OpenCode Toolkit Layer
 
-- [`src/app/api/deep-work/route.ts`](../src/app/api/deep-work/route.ts)
-
-UI:
-
-- [`src/features/routines/deep-work-tracker.tsx`](../src/features/routines/deep-work-tracker.tsx)
-
-## 5. OpenCode Toolkit Layer
-
-The new OpenCode layer is a local operational toolkit built on top of the main app.
+The OpenCode toolkit is a local operator layer on top of the app.
 
 Live storage root:
 
 - `data/opencode/`
 
-Shared helpers:
+Shared storage helper:
 
 - [`src/lib/opencode/storage.ts`](../src/lib/opencode/storage.ts)
-- [`src/lib/opencode/apps-status.ts`](../src/lib/opencode/apps-status.ts)
-- [`src/lib/opencode/month-review.ts`](../src/lib/opencode/month-review.ts)
 
-### Current OpenCode Commands
+The toolkit exists in three forms:
 
-Package scripts are defined in:
+1. **CLI commands / scripts**
+2. **App APIs**
+3. **In-app control panel**
+
+## OpenCode CLI Commands
+
+Declared in:
 
 - [`package.json`](../package.json)
 
-Available commands:
+Current scripts:
 
 - `npm run opencode:shutdown`
 - `npm run opencode:next`
@@ -418,7 +430,7 @@ Available commands:
 - `npm run opencode:paper-grab`
 - `npm run opencode:reg-watch`
 
-Implementation files:
+CLI implementations:
 
 - [`scripts/opencode/shutdown.mjs`](../scripts/opencode/shutdown.mjs)
 - [`scripts/opencode/next.mjs`](../scripts/opencode/next.mjs)
@@ -429,204 +441,270 @@ Implementation files:
 - [`scripts/opencode/paper-grab.mjs`](../scripts/opencode/paper-grab.mjs)
 - [`scripts/opencode/reg-watch.mjs`](../scripts/opencode/reg-watch.mjs)
 
-### OpenCode Application Ops Surface
+## OpenCode App APIs
 
-API:
+Current API routes:
 
-- [`src/app/api/opencode/apps-status/route.ts`](../src/app/api/opencode/apps-status/route.ts)
+- `/api/opencode/apps-status`
+- `/api/opencode/month-review`
+- `/api/opencode/shutdown`
+- `/api/opencode/next`
+- `/api/opencode/track-triage`
+- `/api/opencode/ats-score`
+- `/api/opencode/jd-ingest`
+- `/api/opencode/jds`
+- `/api/opencode/stars`
+- `/api/opencode/star-pull`
+- `/api/opencode/paper-grab`
+- `/api/opencode/reg-watch`
+- `/api/opencode/followup-check`
 
-UI:
+These routes exist so the same operator workflows can be used from both scripts and UI.
+
+## OpenCode Control Panel
+
+UI component:
+
+- [`src/features/automation/opencode-control-panel.tsx`](../src/features/automation/opencode-control-panel.tsx)
+
+Mounted inside:
+
+- [`src/features/automation/automation-dashboard.tsx`](../src/features/automation/automation-dashboard.tsx)
+
+Current in-app actions include:
+
+- save shutdown entry
+- pick next action
+- refresh application ops status
+- generate follow-up drafts
+- run regulatory watch
+- build month review
+- ingest a JD
+- run track triage
+- run ATS scoring
+- retrieve STAR stories
+- capture a paper note
+
+## Application Ops Status
+
+Career application-ops panel:
 
 - [`src/features/career/open-code-apps-status.tsx`](../src/features/career/open-code-apps-status.tsx)
 
-This surface tracks:
+Backed by:
 
-- application drafts
-- applied roles
-- interview / offer pipeline state
-- first and second follow-up due windows
-- likely ghosted roles
+- [`src/lib/opencode/apps-status.ts`](../src/lib/opencode/apps-status.ts)
 
-### OpenCode Knowledge Capture
+It tracks:
 
-Paper capture:
+- drafted review items
+- application state buckets
+- follow-up due windows
+- ghosted roles
 
-- `paper-grab`
+The view is intentionally narrower than the full shortlist. It focuses on **real application-state items**, not every ranked job.
 
-Regulatory digest generation:
+## JD Ingest and Archive
 
-- `reg-watch`
+JD ingest helper:
 
-These are meant to build a reusable local knowledge layer without depending on external proprietary tooling.
+- [`src/lib/opencode/jd-ingest.ts`](../src/lib/opencode/jd-ingest.ts)
 
-## 6. Storage Model
+JD archive browser helper:
 
-The storage system is deliberately simple.
+- [`src/lib/opencode/jd-archive.ts`](../src/lib/opencode/jd-archive.ts)
 
-### Local JSON Storage
+What JD ingest does:
 
-Primary local storage lives under:
+- fetches a JD URL or accepts pasted text
+- strips noisy page markup
+- parses the role with the existing AI parser
+- runs CTA-first track triage
+- writes structured outputs to `data/opencode/jds/`
 
-- `data/*.json`
+Archive outputs:
 
-Examples:
+- markdown file for human reading
+- JSON file for UI/API consumption
 
-- `jobs-raw.json`
-- `jobs-inbox.json`
-- `jobs-ranked.json`
-- `jobs-rejected.json`
-- `application-logs.json`
-- `career-profiles.json`
-- `saved-searches.json`
-- `source-preferences.json`
-- `gmail-token.json`
-- `deep-work-sessions.json`
-- `journal` collection via storage abstraction
+Archive browsing is exposed through:
 
-Storage facade:
+- `/api/opencode/jds`
+- the OpenCode control panel
 
-- [`src/lib/storage/index.ts`](../src/lib/storage/index.ts)
+## STAR Story Bank
 
-This facade can read/write either:
+STAR story helpers:
 
-- Supabase `storage_kv`
-- or local disk JSON files
+- [`src/lib/opencode/star-bank.ts`](../src/lib/opencode/star-bank.ts)
 
-depending on environment availability.
+The STAR bank now supports:
 
-### Local-First Behaviour
+- listing stories
+- saving stories
+- deleting stories
+- retrieving best matches for an interview question
 
-The app is intentionally local-first.
+Persistence model:
 
-If Supabase is absent or broken:
+- one markdown file per story under `data/opencode/stars/`
 
-- the app keeps working
-- data falls back to local JSON
+Template guide:
 
-This is a key architectural property, not a backup-only mode.
+- [`docs/opencode-star-story-template.md`](./opencode-star-story-template.md)
 
-## 7. Worker / Automation Layer
+This is surfaced in:
 
-Background work is handled by the worker system.
+- `/api/opencode/stars`
+- `/api/opencode/star-pull`
+- the OpenCode control panel
 
-Registry:
+## ATS Scoring
 
-- [`src/lib/worker/task-registry.ts`](../src/lib/worker/task-registry.ts)
+ATS scoring helper:
 
-Execution:
+- [`src/lib/opencode/ats-score.ts`](../src/lib/opencode/ats-score.ts)
 
-- [`src/lib/worker/task-runner.ts`](../src/lib/worker/task-runner.ts)
+Purpose:
 
-External shell entrypoint:
+- compare JD text and CV text deterministically
+- estimate keyword coverage
+- flag missing terms
+- evaluate whether the result is near the intended 9-15 keyword sweet spot
 
-- [`scripts/worker.mjs`](../scripts/worker.mjs)
+This exists as:
 
-This worker system can run:
+- CLI script
+- API route
+- control-panel action
 
-- source fetch tasks
-- enrichment tasks
-- ranking tasks
-- weekly review tasks
-- full pipeline tasks
-- recommendation pipeline tasks
+## Knowledge Capture
 
-The source runtime board in Settings / Admin helps expose worker/source state.
+## Paper Capture
 
-## 8. Privacy and Safety
+Paper helper:
 
-The app handles personal workflow data and career materials, so privacy boundaries matter.
+- [`src/lib/opencode/paper-grab.ts`](../src/lib/opencode/paper-grab.ts)
 
-### Existing Boundary
+It supports:
 
-The repo already ignores:
+- PMID lookup via PubMed
+- DOI lookup via Crossref
+- note generation into `data/opencode/notes/papers/`
+
+## Regulatory Watch
+
+Digest helper:
+
+- [`src/lib/opencode/reg-watch.ts`](../src/lib/opencode/reg-watch.ts)
+
+It watches public feeds such as:
+
+- MHRA Drug Safety Update
+- MHRA Drug and Device Alerts
+- FDA Recalls
+
+Output:
+
+- markdown digests under `data/opencode/digests/regulatory/`
+- dedupe cache so repeated runs only keep fresh items
+
+## Privacy and Safety
+
+The repo already ignores local operational data via:
+
+- [`.gitignore`](../.gitignore)
+
+Notably:
 
 - `data/`
 - `.env*`
 - `backups/`
 
-See:
-
-- [`.gitignore`](../.gitignore)
-
-### OpenCode Privacy Layer
-
-The new privacy notes live in:
+OpenCode privacy guidance:
 
 - [`docs/opencode-privacy.md`](./opencode-privacy.md)
 
-The intended model is:
+Current privacy model:
 
-- `data/opencode/` = live local working state
-- `private/` = encrypted export area for sensitive snapshots
+- `data/opencode/` is the live local working area
+- `private/` is reserved for encrypted exports and sensitive snapshots
 
-Hook scaffolding:
+Pre-commit guardrail template:
 
 - [`scripts/git-hooks/pre-commit`](../scripts/git-hooks/pre-commit)
+
+Optional helper scripts:
+
 - [`scripts/opencode/install-hooks.ps1`](../scripts/opencode/install-hooks.ps1)
-
-Optional encryption helpers:
-
 - [`scripts/opencode/encrypt-private.ps1`](../scripts/opencode/encrypt-private.ps1)
 - [`scripts/opencode/decrypt-private.ps1`](../scripts/opencode/decrypt-private.ps1)
 
-## 9. How The Main Flows Work Together
+## Worker and Automation Execution
 
-### Job Flow
+Background worker registry:
 
-1. A source fetch or Gmail scan finds raw jobs
-2. Raw jobs are saved
-3. Relevance gating removes obvious junk
-4. AI parsing structures the job
-5. AI fit scoring evaluates strategic value
-6. Ranked / inbox / rejected collections are updated
-7. Career UI surfaces the results
-8. Review-only application assistance can draft follow-ups or Gmail drafts
+- [`src/lib/worker/task-registry.ts`](../src/lib/worker/task-registry.ts)
 
-### Daily Operations Flow
+Task runner:
 
-1. You use `opencode:shutdown` to record the day and set tomorrow's top 3
-2. `opencode:next` can choose the next best action
-3. `opencode:apps-status` rebuilds application ops state
-4. `opencode:followup-check` drafts follow-up messages when due
-5. `opencode:reg-watch` and `opencode:paper-grab` keep knowledge fresh
-6. Life OS month review aggregates the results
+- [`src/lib/worker/task-runner.ts`](../src/lib/worker/task-runner.ts)
 
-### Weekly / Monthly Reflection Flow
+External worker entrypoint:
 
-1. Deep work and journal entries accumulate
-2. Career and application data accumulates
-3. Weekly review summarises tactical state
-4. Month review summarises strategic behaviour and throughput
+- [`scripts/worker.mjs`](../scripts/worker.mjs)
 
-## 10. Current Direction Of The Application
+The worker can run:
 
-The app is moving toward a tighter, opinionated operating model:
+- source fetch tasks
+- enrichment and ranking tasks
+- Gmail-enhanced full pipeline runs
+- recommendation pipeline runs
+- weekly review tasks
 
-- **CTA-first** job discovery and prioritisation
-- **higher signal, lower junk** in the pipeline
-- **Gmail-assisted discovery** on every important run path
-- **local operational tooling** for decision support and execution
+## Current Direction
+
+The application is now evolving in a very specific direction:
+
+- **CTA-first job discovery and ranking**
+- **lower junk, stronger early rejection**
+- **Gmail-assisted discovery on every important run path**
+- **review-first application operations**
+- **local operational tooling with an in-app control surface**
 - **knowledge capture that compounds over time**
 
-This means the app is no longer just a generic personal dashboard. It is becoming a domain-specific system for:
+It is no longer just a generic dashboard. It is becoming a purpose-built execution system for:
 
-- career transition execution
+- career transition workflow
 - regulated-healthcare opportunity management
-- AI-assisted operational discipline
+- follow-up discipline
+- AI-assisted planning and reflection
 
-## Short Summary
+## Best Files to Read First
 
-Life OS is a local-first AI-assisted operating system for career execution and personal decision support.
-
-Its most developed workflow is the Career pipeline, which discovers jobs, parses them, scores fit, ranks them, and supports review-first application operations.
-
-Around that core, the app provides planning, review, journaling, routines, decision tracking, automation, and now an OpenCode toolkit layer for faster daily execution.
-
-If you want to understand the system quickly, start with these files:
+If you want to understand the codebase quickly, start here:
 
 - [`src/features/career/career-dashboard.tsx`](../src/features/career/career-dashboard.tsx)
 - [`src/lib/jobs/pipeline/index.ts`](../src/lib/jobs/pipeline/index.ts)
+- [`src/lib/jobs/pipeline/relevance.ts`](../src/lib/jobs/pipeline/relevance.ts)
+- [`src/lib/applications/gmail.ts`](../src/lib/applications/gmail.ts)
 - [`src/lib/ai/client.ts`](../src/lib/ai/client.ts)
 - [`src/features/life-os/life-os-dashboard.tsx`](../src/features/life-os/life-os-dashboard.tsx)
+- [`src/features/automation/automation-dashboard.tsx`](../src/features/automation/automation-dashboard.tsx)
+- [`src/features/automation/opencode-control-panel.tsx`](../src/features/automation/opencode-control-panel.tsx)
+- [`src/lib/opencode/`](../src/lib/opencode/)
 - [`src/lib/storage/index.ts`](../src/lib/storage/index.ts)
-- [`scripts/opencode/`](../scripts/opencode/)
+
+## Short Summary
+
+Life OS is a local-first personal operating system whose strongest workflow is now a CTA-first career pipeline.
+
+It discovers jobs, removes junk, parses and scores roles, supports application review and follow-up, and now layers on an OpenCode toolkit for shutdown planning, next-action selection, JD ingestion, STAR retrieval, ATS scoring, paper capture, and regulatory watching.
+
+The newest additions make the system more operationally complete:
+
+- a stricter CTA-first shortlist
+- a persistent STAR story bank
+- a JD archive
+- a unified in-app OpenCode control panel
+- richer local workflows without depending on MCP or external orchestrators
