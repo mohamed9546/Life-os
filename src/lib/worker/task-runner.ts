@@ -30,6 +30,7 @@ import { getTransactions, updateTransaction } from "@/lib/money/storage";
 import { categorizeTransaction } from "@/lib/ai";
 import { generateWeeklyReview } from "@/lib/life-os/weekly-review";
 import { runAutoApplyPipeline } from "@/lib/applications/auto-apply";
+import { runSourceHealthCheck } from "@/lib/jobs/source-health";
 
 const WORKER_USER_ID = process.env.LIFE_OS_DEFAULT_USER_ID || "preview-user";
 
@@ -443,6 +444,8 @@ async function runTaskFunction(
       return runFullPipelineTask();
     case "auto-apply-pipeline":
       return runAutoApplyPipelineTask();
+    case "source-health-check":
+      return runSourceHealthCheckTask();
     default:
       throw new Error(`No function registered for task: ${taskId}`);
   }
@@ -590,6 +593,18 @@ async function runAutoApplyPipelineTask(): Promise<Record<string, unknown>> {
     paused: result.paused,
     skipped: result.skipped,
     failed: result.failed,
+  };
+}
+
+async function runSourceHealthCheckTask(): Promise<Record<string, unknown>> {
+  const snapshot = await runSourceHealthCheck();
+  return {
+    totalSources: snapshot.totalSources,
+    ok: snapshot.ok,
+    degraded: snapshot.degraded,
+    down: snapshot.down,
+    unknown: snapshot.unknown,
+    durationMs: snapshot.durationMs,
   };
 }
 

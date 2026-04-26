@@ -14,3 +14,8 @@ Thumbs.db
 tsconfig.tsbuildinfo
 life-os-workspace.json
 life-os-source.json
+
+# Private encrypted exports only
+private/*
+!private/.gitkeep
+!private/**/*.age

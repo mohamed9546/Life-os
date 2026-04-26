@@ -10,6 +10,7 @@ import {
 import { useApi } from "@/hooks/use-api";
 import { CommandBar, Panel, SectionHeading, StatusChip } from "@/components/ui/system";
 import { StatusBadge } from "@/components/status-badge";
+import { SourceHealthPanel } from "./source-health-panel";
 
 type CompanyBoardItem = GreenhouseCompanyConfig | LeverCompanyConfig;
 
@@ -474,6 +475,8 @@ export function AdminIntegrationsPanel() {
           </div>
         </div>
       </div>
+
+      <SourceHealthPanel />
 
       <div className="space-y-4">
         <SectionHeading
