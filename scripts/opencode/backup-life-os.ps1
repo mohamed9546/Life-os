@@ -1,8 +1,13 @@
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-  [Parameter(Mandatory = $true)]
+  [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
   [string]$Recipient,
 
-  [switch]$DryRun
+  [Parameter(ParameterSetName = 'Run')]
+  [switch]$DryRun,
+
+  [Parameter(Mandatory = $true, ParameterSetName = 'Help')]
+  [switch]$Help
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +21,31 @@ function Require-Age {
 
 function Normalize-RelativePath([string]$Path) {
   return $Path.Replace('\', '/')
+}
+
+function Get-LifeOsRelativePath {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$BasePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$FullPath
+  )
+
+  $baseFullPath = [System.IO.Path]::GetFullPath($BasePath)
+  $targetFullPath = [System.IO.Path]::GetFullPath($FullPath)
+
+  if (-not $baseFullPath.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+    $baseFullPath = $baseFullPath + [System.IO.Path]::DirectorySeparatorChar
+  }
+
+  $baseUri = New-Object System.Uri($baseFullPath)
+  $targetUri = New-Object System.Uri($targetFullPath)
+
+  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+  $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
+
+  return $relativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
 }
 
 function Should-ExcludePath([string]$RelativePath) {
@@ -39,6 +69,12 @@ function Should-ExcludePath([string]$RelativePath) {
   )
 }
 
+if ($Help) {
+  Write-Host 'Usage: .\scripts\opencode\backup-life-os.ps1 -Recipient "<AGE_PUBLIC_RECIPIENT>" [-DryRun]'
+  Write-Host 'Requires the age CLI on PATH and writes encrypted backups to private\exports\.'
+  return
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $timestamp = Get-Date -Format 'yyyy-MM-dd-HHmm'
 $stagingRoot = Join-Path $repoRoot "backups\staging\backup-$timestamp"
@@ -51,7 +87,7 @@ $manifestPath = Join-Path $payloadRoot 'manifest.json'
 Require-Age
 
 $files = Get-ChildItem -Path (Join-Path $repoRoot 'data') -File -Recurse | ForEach-Object {
-  $relative = Normalize-RelativePath ([System.IO.Path]::GetRelativePath($repoRoot, $_.FullName))
+  $relative = Normalize-RelativePath (Get-LifeOsRelativePath -BasePath $repoRoot -FullPath $_.FullName)
   [PSCustomObject]@{
     RelativePath = $relative
     FullPath = $_.FullName

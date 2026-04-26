@@ -1,11 +1,16 @@
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-  [Parameter(Mandatory = $true)]
+  [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
   [string]$BackupFile,
 
-  [Parameter(Mandatory = $true)]
+  [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
   [string]$IdentityFile,
 
-  [switch]$KeepStaging
+  [Parameter(ParameterSetName = 'Run')]
+  [switch]$KeepStaging,
+
+  [Parameter(Mandatory = $true, ParameterSetName = 'Help')]
+  [switch]$Help
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +24,31 @@ function Require-Age {
 
 function Normalize-RelativePath([string]$Path) {
   return $Path.Replace('\', '/')
+}
+
+function Get-LifeOsRelativePath {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$BasePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$FullPath
+  )
+
+  $baseFullPath = [System.IO.Path]::GetFullPath($BasePath)
+  $targetFullPath = [System.IO.Path]::GetFullPath($FullPath)
+
+  if (-not $baseFullPath.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+    $baseFullPath = $baseFullPath + [System.IO.Path]::DirectorySeparatorChar
+  }
+
+  $baseUri = New-Object System.Uri($baseFullPath)
+  $targetUri = New-Object System.Uri($targetFullPath)
+
+  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+  $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
+
+  return $relativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
 }
 
 function Should-ExcludePath([string]$RelativePath) {
@@ -76,6 +106,12 @@ function Validate-Manifest($manifest, [string[]]$ExtractedRelativePaths) {
   return $errors
 }
 
+if ($Help) {
+  Write-Host 'Usage: .\scripts\opencode\restore-life-os.ps1 -BackupFile "<PATH_TO_BACKUP.age>" -IdentityFile "<PATH_TO_AGE_IDENTITY>" [-KeepStaging]'
+  Write-Host 'Requires the age CLI on PATH and restores only after staging, validation, and confirmation.'
+  return
+}
+
 Require-Age
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -114,7 +150,7 @@ if (-not (Test-Path $manifestPath)) {
 $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 
 $extractedPaths = Get-ChildItem -Path $extractRoot -Recurse | ForEach-Object {
-  Normalize-RelativePath ([System.IO.Path]::GetRelativePath($extractRoot, $_.FullName))
+  Normalize-RelativePath (Get-LifeOsRelativePath -BasePath $extractRoot -FullPath $_.FullName)
 } | Where-Object { $_ -and $_ -ne 'manifest.json' }
 
 $errors = Validate-Manifest $manifest $extractedPaths
@@ -123,7 +159,7 @@ if ($errors.Count -gt 0) {
 }
 
 $filesToRestore = Get-ChildItem -Path (Join-Path $extractRoot 'data') -File -Recurse | ForEach-Object {
-  $relative = Normalize-RelativePath ([System.IO.Path]::GetRelativePath($extractRoot, $_.FullName))
+  $relative = Normalize-RelativePath (Get-LifeOsRelativePath -BasePath $extractRoot -FullPath $_.FullName)
   [PSCustomObject]@{
     RelativePath = $relative
     FullPath = $_.FullName
