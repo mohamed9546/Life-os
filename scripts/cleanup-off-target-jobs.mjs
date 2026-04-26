@@ -15,6 +15,59 @@ const TARGET_TITLE_PATTERNS = [
   /^band 6 ct radiographer(?:\s*-\s*paisley)?$/i,
   /^ivc system operator$/i,
   /^van driver$/i,
+  /^healthcare assessor/i,
+  /^biomedical scientist$/i,
+  /^laboratory support assistant$/i,
+  /^laboratory technician$/i,
+  /^qc micro technician$/i,
+  /^site engineer$/i,
+  /^site fitter$/i,
+  /^passive fire surveyor$/i,
+  /^stock condition surveyor/i,
+  /^production operator$/i,
+  /^mobile plant operator$/i,
+  /^motor vehicle technician$/i,
+  /^hgv technician$/i,
+  /^digital support apprentice$/i,
+  /^it technician apprentice$/i,
+  /^network engineer apprentice$/i,
+  /^quality engineer$/i,
+  /^quality assurance specialist$/i,
+  /^quality engineer.*medical devices/i,
+  /^customer service coordinator/i,
+  /^meeting & events coordinator$/i,
+  /^chef de partie$/i,
+  /^housekeeping supervisor$/i,
+  /^support co$/i,
+  /^trust tax associate$/i,
+  /^tax trainee$/i,
+  /^personal tax manager$/i,
+  /^chartered tax adviser$/i,
+  /^ifa advice quality control$/i,
+  /^account manager$/i,
+];
+
+const TARGET_TITLE_SUBSTRINGS = [
+  "tax manager",
+  "corporate tax",
+  "vice president",
+  "regulatory affairs manager",
+  "head of quality assurance",
+  "senior regulatory specialist",
+  "financial services advisory",
+  "transaction monitoring analyst",
+  "cyber security",
+  "structural designer",
+  "engineer apprentice",
+  "digital operative apprentice",
+  "support worker",
+  "medical affairs director",
+  "regulatory liaison",
+  "accountant",
+  "paralegal",
+  "restructuring",
+  "property finance",
+  "new build assistant",
 ];
 
 const COLLECTION_FILES = [
@@ -41,7 +94,10 @@ function normalizeTitle(value) {
 
 function titleMatches(value) {
   const normalized = normalizeTitle(value);
-  return TARGET_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
+  return (
+    TARGET_TITLE_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+    TARGET_TITLE_SUBSTRINGS.some((term) => normalized.includes(term))
+  );
 }
 
 function candidateTitles(record) {

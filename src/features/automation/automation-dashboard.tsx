@@ -3,6 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatus } from "@/types";
+import { OpenCodeControlPanel } from "./opencode-control-panel";
 
 interface OpsResponse {
   aiHealth: {
@@ -294,6 +295,8 @@ export function AutomationDashboard() {
           </div>
         </StatCard>
       </div>
+
+      <OpenCodeControlPanel />
 
       <div className="card">
         <div className="flex items-center justify-between gap-3">
