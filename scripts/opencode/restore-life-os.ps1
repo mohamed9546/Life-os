@@ -61,9 +61,8 @@ function Should-ExcludePath([string]$RelativePath) {
     $p -match '(^|/).+\.log$' -or
     $p -match '^python-ai/\.venv(?:/|$)' -or
     $p -match '^python-ai(?:/.+)?/__pycache__(?:/|$)' -or
-    $p -match '^data/gmail-token\.json$' -or
-    $p -match '^data/gcp-oauth\.keys\.json$' -or
-    $p -match '^data(?:/.+)?/.+oauth.+\.(json|txt)$' -or
+    $p -match '(^|/)(gmail-token\.json|gcp-oauth\.keys\.json)$' -or
+    $p -match '(^|/)([^/]*[-_.])?(oauth|token|credentials?|credential)([-_.][^/]*)?\.(json|txt|key|pem)$' -or
     $p -match '^private(?:/|$)' -or
     $p -match '^data/generated-cvs(?:/|$)' -or
     $p -match '^data/playwright-auto-apply(?:/|$)' -or

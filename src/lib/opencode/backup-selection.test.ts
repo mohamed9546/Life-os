@@ -13,15 +13,17 @@ import {
 } from "./backup-manifest";
 
 describe("backup selection", () => {
-  it("includes data and data/opencode files", () => {
+  it("includes safe data and data/opencode files", () => {
     const result = buildBackupSelectionFromRelativePaths([
       "data/jobs-ranked.json",
       "data/opencode/apps-status.json",
+      "data/settings.json",
     ]);
 
     expect(result.included.map((item) => item.relativePath)).toEqual([
       "data/jobs-ranked.json",
       "data/opencode/apps-status.json",
+      "data/settings.json",
     ]);
   });
 
@@ -30,10 +32,38 @@ describe("backup selection", () => {
     expect(shouldExcludeBackupPath("data/.env.backup")).toBe(true);
   });
 
-  it("excludes OAuth/token files", () => {
+  it("excludes token files by filename anywhere in the payload", () => {
     expect(shouldExcludeBackupPath("data/gmail-token.json")).toBe(true);
+    expect(shouldExcludeBackupPath("data/nested/gmail-token.json")).toBe(true);
     expect(shouldExcludeBackupPath("data/gcp-oauth.keys.json")).toBe(true);
+    expect(shouldExcludeBackupPath("data/nested/gcp-oauth.keys.json")).toBe(true);
+    expect(shouldExcludeBackupPath("nested/path/gmail-token.json")).toBe(true);
+    expect(shouldExcludeBackupPath("nested/path/gcp-oauth.keys.json")).toBe(true);
+  });
+
+  it("excludes likely oauth and credential filenames without blocking normal app state", () => {
     expect(shouldExcludeBackupPath("data/oauth-credentials.json")).toBe(true);
+    expect(shouldExcludeBackupPath("data/access-token-cache.json")).toBe(true);
+    expect(shouldExcludeBackupPath("data/jobs-ranked.json")).toBe(false);
+    expect(shouldExcludeBackupPath("data/opencode/apps-status.json")).toBe(false);
+  });
+
+  it("keeps safe files in backup selection while excluding token files", () => {
+    const result = buildBackupSelectionFromRelativePaths([
+      "data/jobs-ranked.json",
+      "data/gmail-token.json",
+      "data/nested/gcp-oauth.keys.json",
+      "data/opencode/apps-status.json",
+    ]);
+
+    expect(result.included.map((item) => item.relativePath)).toEqual([
+      "data/jobs-ranked.json",
+      "data/opencode/apps-status.json",
+    ]);
+    expect(result.excluded).toEqual([
+      "data/gmail-token.json",
+      "data/nested/gcp-oauth.keys.json",
+    ]);
   });
 
   it("excludes plaintext private files", () => {
@@ -87,5 +117,26 @@ describe("backup manifest", () => {
     const result = validateBackupManifest(manifest, ["data/jobs-ranked.json", ".env.local"]);
     expect(result.valid).toBe(false);
     expect(result.errors.some((error) => error.includes("forbidden") || error.includes("excluded"))).toBe(true);
+  });
+
+  it("restore validation rejects forbidden token paths in manifest or payload", () => {
+    const manifest = createBackupManifest({
+      includedPaths: ["data", "data/gmail-token.json"],
+      fileCount: 2,
+      byteCount: 100,
+    });
+
+    const result = validateBackupManifest(manifest, [
+      "data/jobs-ranked.json",
+      "data/nested/gcp-oauth.keys.json",
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        "Manifest includes excluded path: data/gmail-token.json.",
+        "Restored payload contains forbidden path: data/nested/gcp-oauth.keys.json.",
+      ])
+    );
   });
 });
