@@ -557,6 +557,30 @@ export interface WorkerRunRecord extends Timestamped {
   error?: string;
 }
 
+export type SourceHealthStatus = "ok" | "degraded" | "down" | "unknown";
+
+export interface SourceHealthResult {
+  sourceId: string;
+  sourceName: string;
+  status: SourceHealthStatus;
+  checkedAt: string;
+  latencyMs: number | null;
+  resultCount: number | null;
+  error: string | null;
+  warning: string | null;
+}
+
+export interface SourceHealthSnapshot {
+  checkedAt: string;
+  durationMs: number;
+  totalSources: number;
+  ok: number;
+  degraded: number;
+  down: number;
+  unknown: number;
+  results: SourceHealthResult[];
+}
+
 // --- Source / admin config ---
 
 export interface GreenhouseCompanyConfig {

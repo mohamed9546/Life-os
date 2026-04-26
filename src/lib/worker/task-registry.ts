@@ -302,6 +302,18 @@ export const DEFAULT_TASK_CONFIGS: WorkerTaskConfig[] = [
     maxConsecutiveFailures: 2,
     adminOnly: true,
   },
+  {
+    id: "source-health-check",
+    name: "Source Health Check",
+    enabled: false,
+    minIntervalMs: 4 * 60 * 60 * 1000,
+    dailyLimit: 6,
+    burstWindowMs: 30 * 60 * 1000,
+    burstLimit: 1,
+    cooldownMs: 60 * 1000,
+    maxConsecutiveFailures: 3,
+    adminOnly: true,
+  },
 ];
 
 /**
