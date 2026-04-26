@@ -20,6 +20,8 @@ const PAGES: Page[] = [
   { id: "overview",  label: "Overview",   href: "/overview",  icon: LayoutDashboard },
   { id: "life-os",   label: "Life OS",    href: "/life-os",   icon: Brain },
   { id: "career",    label: "Career",     href: "/career",    icon: Briefcase },
+  { id: "career-jd-archive", label: "Career JD Archive", href: "/career/jd-archive", icon: Briefcase },
+  { id: "career-star-bank", label: "Career STAR Bank", href: "/career/star-bank", icon: Briefcase },
   { id: "money",     label: "Money",      href: "/money",     icon: DollarSign },
   { id: "decisions", label: "Decisions",  href: "/decisions", icon: GitBranch },
   { id: "routines",  label: "Routines",   href: "/routines",  icon: CheckSquare },

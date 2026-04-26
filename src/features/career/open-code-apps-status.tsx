@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertBanner, Panel } from "@/components/ui/system";
+
+type OpsLane = "primary" | "secondary" | "all";
 
 interface AppsStatusResponse {
   generatedAt: string;
@@ -29,6 +31,7 @@ interface AppsStatusResponse {
     daysSilent: number | null;
     followUpStage: "first" | "second" | null;
     ghosted: boolean;
+    lane: "primary" | "secondary" | "off-target";
   }>;
 }
 
@@ -36,6 +39,7 @@ export function OpenCodeAppsStatusPanel() {
   const [data, setData] = useState<AppsStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lane, setLane] = useState<OpsLane>("primary");
 
   useEffect(() => {
     async function load() {
@@ -90,6 +94,12 @@ export function OpenCodeAppsStatusPanel() {
         </div>
       ) : data ? (
         <>
+          <div className="flex flex-wrap gap-2">
+            <LaneButton active={lane === "primary"} onClick={() => setLane("primary")}>CTA-first ops</LaneButton>
+            <LaneButton active={lane === "secondary"} onClick={() => setLane("secondary")}>Secondary lane ops</LaneButton>
+            <LaneButton active={lane === "all"} onClick={() => setLane("all")}>All application ops</LaneButton>
+          </div>
+
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
             <StatCard label="Applied" value={data.totals.applied} />
             <StatCard label="Interview" value={data.totals.interview} />
@@ -100,7 +110,7 @@ export function OpenCodeAppsStatusPanel() {
           </div>
 
           <div className="space-y-2">
-            {data.candidates.slice(0, 8).map((item) => (
+            {filterOpsCandidates(data.candidates, lane).slice(0, 8).map((item) => (
               <div key={item.dedupeKey} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -112,6 +122,7 @@ export function OpenCodeAppsStatusPanel() {
                   <div className="flex flex-wrap items-center gap-2 text-[11px]">
                     <Pill label={item.appStatus} />
                     <Pill label={item.pipelineStatus} subtle />
+                    <Pill label={item.lane === "primary" ? "CTA-first" : item.lane === "secondary" ? "Secondary" : "Other"} subtle />
                     {item.fitScore != null ? <Pill label={`Fit ${item.fitScore}`} subtle /> : null}
                   </div>
                 </div>
@@ -132,6 +143,27 @@ export function OpenCodeAppsStatusPanel() {
         </>
       ) : null}
     </Panel>
+  );
+}
+
+function filterOpsCandidates(candidates: AppsStatusResponse["candidates"], lane: OpsLane) {
+  if (lane === "all") {
+    return candidates;
+  }
+  if (lane === "primary") {
+    return candidates.filter((item) => item.lane === "primary");
+  }
+  return candidates.filter((item) => item.lane === "secondary");
+}
+
+function LaneButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${active ? "bg-violet-500/15 text-violet-200" : "bg-white/5 text-slate-400 hover:text-slate-200"}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }
 

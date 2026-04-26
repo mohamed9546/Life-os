@@ -21,6 +21,8 @@ The application is designed to keep working without cloud infrastructure. When S
 The most important pages are:
 
 - [`/career`](../src/app/career/page.tsx)
+- [`/career/jd-archive`](../src/app/career/jd-archive/page.tsx)
+- [`/career/star-bank`](../src/app/career/star-bank/page.tsx)
 - [`/life-os`](../src/app/life-os/page.tsx)
 - [`/automation`](../src/app/automation/page.tsx)
 - [`/settings`](../src/app/settings/page.tsx)
@@ -513,6 +515,9 @@ JD ingest helper:
 JD archive browser helper:
 
 - [`src/lib/opencode/jd-archive.ts`](../src/lib/opencode/jd-archive.ts)
+- dedicated Career archive UI:
+  - [`src/app/career/jd-archive/page.tsx`](../src/app/career/jd-archive/page.tsx)
+  - [`src/features/career/jd-archive-browser.tsx`](../src/features/career/jd-archive-browser.tsx)
 
 What JD ingest does:
 
@@ -531,6 +536,7 @@ Archive browsing is exposed through:
 
 - `/api/opencode/jds`
 - the OpenCode control panel
+- the dedicated Career JD Archive page
 
 ## STAR Story Bank
 
@@ -558,6 +564,9 @@ This is surfaced in:
 - `/api/opencode/stars`
 - `/api/opencode/star-pull`
 - the OpenCode control panel
+- the dedicated Career STAR Bank page:
+  - [`src/app/career/star-bank/page.tsx`](../src/app/career/star-bank/page.tsx)
+  - [`src/features/career/star-bank-manager.tsx`](../src/features/career/star-bank-manager.tsx)
 
 ## ATS Scoring
 

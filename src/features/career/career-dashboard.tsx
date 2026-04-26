@@ -35,6 +35,10 @@ import {
   FilterBar as SysFilterBar,
 } from "@/components/ui/system";
 import { getRoleTrackLabel } from "@/lib/career/role-track-labels";
+import {
+  isPrimaryCtaShortlistJob,
+  isSecondaryShortlistJob,
+} from "@/lib/career/shortlist-lanes";
 import { getSourceBadgeClassName, getSourceLabel } from "@/lib/jobs/source-meta";
 import { cn } from "@/lib/utils";
 import { OpenCodeAppsStatusPanel } from "./open-code-apps-status";
@@ -1160,44 +1164,6 @@ function InboxSection({
   );
 }
 
-const CTA_PRIMARY_TERMS = [
-  "clinical trial assistant",
-  "clinical trials assistant",
-  "clinical trial associate",
-  "clinical research assistant",
-  "clinical research coordinator",
-  "trial coordinator",
-  "clinical study assistant",
-  "clinical study coordinator",
-  "clinical operations assistant",
-  "trial administrator",
-  "study start-up",
-  "study startup",
-  "site activation",
-  "tmf",
-  "etmf",
-  "ctms",
-];
-
-function isPrimaryCtaShortlistJob(job: EnrichedJob): boolean {
-  const parsed = job.parsed?.data;
-  const title = (parsed?.title || job.raw.title || "").toLowerCase();
-  const summary = (parsed?.summary || job.raw.description || "").toLowerCase();
-  const keywords = [...(parsed?.keywords || []), ...(parsed?.mustHaves || [])]
-    .join(" ")
-    .toLowerCase();
-
-  const hasPrimarySignal = CTA_PRIMARY_TERMS.some(
-    (term) => title.includes(term) || summary.includes(term) || keywords.includes(term)
-  );
-
-  return parsed?.roleTrack === "clinical" && hasPrimarySignal;
-}
-
-function isSecondaryShortlistJob(job: EnrichedJob): boolean {
-  const roleTrack = job.parsed?.data?.roleTrack || "other";
-  return ["qa", "regulatory", "medinfo"].includes(roleTrack);
-}
 
 function RankedJobCard({
   job,

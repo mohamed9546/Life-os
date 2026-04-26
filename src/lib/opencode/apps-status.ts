@@ -9,6 +9,7 @@ import {
 } from "@/lib/jobs/storage";
 import { writeOpenCodeJson, writeOpenCodeText } from "./storage";
 import { getSourceLabel } from "@/lib/jobs/source-meta";
+import { inferShortlistLaneFromText, type ShortlistLane } from "@/lib/career/shortlist-lanes";
 
 export interface OpenCodeApplicationStatusItem {
   dedupeKey: string;
@@ -23,6 +24,7 @@ export interface OpenCodeApplicationStatusItem {
   daysSilent: number | null;
   followUpStage: "first" | "second" | null;
   ghosted: boolean;
+  lane: ShortlistLane;
   gmailDraftId?: string;
   applyUrl?: string;
 }
@@ -106,6 +108,12 @@ export async function buildOpenCodeAppsStatus(
       const pipelineStatus = job?.status || "unknown";
       const actionable = ["planned", "drafted", "applied", "paused"].includes(appStatus);
       const ghosted = actionable && (daysSilent ?? 0) >= 21 && pipelineStatus !== "interview" && pipelineStatus !== "offer";
+      const lane = inferShortlistLaneFromText({
+        roleTrack: job?.parsed?.data?.roleTrack,
+        title: job?.parsed?.data?.title || job?.raw.title || log?.title,
+        summary: job?.parsed?.data?.summary || "",
+        keywords: job?.parsed?.data?.keywords || [],
+      });
 
       return {
         dedupeKey,
@@ -120,6 +128,7 @@ export async function buildOpenCodeAppsStatus(
         daysSilent,
         followUpStage: actionable ? followUpStage : null,
         ghosted,
+        lane,
         gmailDraftId: log?.gmailDraftId,
         applyUrl: log?.applyUrl || job?.raw.link,
       } satisfies OpenCodeApplicationStatusItem;
