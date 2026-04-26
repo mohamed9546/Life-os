@@ -145,6 +145,96 @@ export interface AIHealthStatus {
   error?: string;
 }
 
+export type AILocalOrCloud = "local" | "cloud" | "unknown";
+export type AISensitivityLevel =
+  | "public"
+  | "internal"
+  | "sensitive"
+  | "clinical-adjacent"
+  | "recruiter-private"
+  | "finance-private"
+  | "cv-private"
+  | "unknown";
+
+export interface AITelemetryEntry {
+  id: string;
+  taskName: string;
+  taskType: string;
+  callingModule: string | null;
+  provider: string | null;
+  model: string | null;
+  runtimeRoute: string | null;
+  localOrCloud: AILocalOrCloud;
+  sensitivityLevel: AISensitivityLevel;
+  startedAt: string;
+  completedAt: string;
+  latencyMs: number;
+  success: boolean;
+  errorType: string | null;
+  errorSummary: string | null;
+  fallbackUsed: boolean;
+  fallbackReason: string | null;
+  inputTokenEstimate: number | null;
+  outputTokenEstimate: number | null;
+  totalTokenEstimate: number | null;
+  estimatedCost: number | null;
+  metadataVersion: number;
+}
+
+export interface AITelemetryUsageWindow {
+  totalCalls: number;
+  successCount: number;
+  failureCount: number;
+  fallbackCount: number;
+  averageLatencyMs: number;
+  estimatedCost: number;
+}
+
+export interface AITelemetrySummary {
+  generatedAt: string;
+  totalCalls: number;
+  successCount: number;
+  failureCount: number;
+  fallbackCount: number;
+  averageLatencyMs: number;
+  estimatedTotalCost: number;
+  windows: {
+    today: AITelemetryUsageWindow;
+    week: AITelemetryUsageWindow;
+    month: AITelemetryUsageWindow;
+  };
+  providerUsage: Array<{ provider: string; count: number }>;
+  modelUsage: Array<{ model: string; count: number }>;
+  localVsCloud: {
+    local: number;
+    cloud: number;
+    unknown: number;
+  };
+  slowestTasks: Array<{
+    taskType: string;
+    taskName: string;
+    averageLatencyMs: number;
+    maxLatencyMs: number;
+    count: number;
+  }>;
+  recentFailures: Array<{
+    taskType: string;
+    taskName: string;
+    provider: string | null;
+    model: string | null;
+    errorType: string | null;
+    errorSummary: string | null;
+    completedAt: string;
+  }>;
+  sensitivityRouting: Array<{
+    sensitivityLevel: AISensitivityLevel;
+    count: number;
+    local: number;
+    cloud: number;
+    unknown: number;
+  }>;
+}
+
 export interface AIConfig {
   provider: AIProvider;
   mode: AIRuntimeMode;

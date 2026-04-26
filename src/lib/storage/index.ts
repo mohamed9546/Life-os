@@ -147,6 +147,19 @@ export async function writeCollection<T>(
   }
 }
 
+export async function writeCollectionLocalMirror<T>(
+  collection: string,
+  data: T[]
+): Promise<void> {
+  await ensureDataDir();
+  const fp = await filePath(collection);
+  try {
+    await fs.writeFile(fp, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error(`[storage] Error mirroring ${collection} locally:`, err);
+  }
+}
+
 // Per-collection lock chain. `appendToCollection` is read-modify-write
 // against a single JSONB row, so concurrent callers (e.g. the pipeline
 // firing multiple AI log entries while enriching in parallel) race and
@@ -311,6 +324,7 @@ export const Collections = {
   ROUTINE_CHECKINS: "routine-checkins",
   IMPORT_RECORDS: "import-records",
   AI_LOG: "ai-log",
+  AI_TELEMETRY: "ai-telemetry",
   WORKER_STATE: "worker-state",
   TARGET_COMPANIES: "target-companies",
   CV_LIBRARY: "cv-library",
