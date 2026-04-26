@@ -19,6 +19,7 @@ import {
 } from "./config";
 import { checkAIRateLimit, getAIUsageStats, recordAICall } from "./rate-limiter";
 import { appendToCollection, Collections } from "@/lib/storage";
+import { classifyTelemetryErrorType, recordAiTelemetryEvent } from "./telemetry";
 
 function isUsageLimitReason(reason?: string): boolean {
   return Boolean(
@@ -54,6 +55,8 @@ export interface AICallOptions {
   maxTokens?: number;
   rawInput?: unknown;
   skipRateLimit?: boolean;
+  callingModule?: string;
+  sensitivityLevel?: string;
   /** Skip JSON format enforcement and return raw text. Use for chat/free-text tasks. */
   rawTextOutput?: boolean;
 }
@@ -93,6 +96,16 @@ async function logAICall(entry: AILogEntry): Promise<void> {
     await appendToCollection(Collections.AI_LOG, [entry]);
   } catch (err) {
     console.error("[ai-client] Failed to write AI log:", err);
+  }
+}
+
+async function safeRecordAiTelemetryEvent(
+  input: Parameters<typeof recordAiTelemetryEvent>[0]
+): Promise<void> {
+  try {
+    await recordAiTelemetryEvent(input);
+  } catch (err) {
+    console.warn("[ai-client] Failed to write AI telemetry:", err);
   }
 }
 
@@ -563,14 +576,62 @@ async function callRuntime(
 export async function callAI<T = unknown>(
   options: AICallOptions
 ): Promise<AICallResult<T>> {
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
   const config = await loadAIConfig();
   const taskType = options.taskType as AITaskType;
   const taskConfig = getTaskRuntimeSettings(config, taskType);
+  const taskName = taskConfig.label || options.taskType;
   const temperature = options.temperature ?? taskConfig.temperature;
   const maxTokens = options.maxTokens ?? taskConfig.maxTokens;
   const effectiveTimeoutMs = taskConfig.timeoutMs;
+  const serializedInput = getSerializedInput(options.rawInput ?? options.prompt);
+  const inputBytes = getByteLength(serializedInput);
+  let forcedSecondaryRoute = false;
+
+  const recordEarlyFailure = async (input: {
+    error: string;
+    failureKind: AIFailureKind;
+    runtimeRoute?: string;
+    provider?: string | null;
+    model?: string | null;
+    localOrCloud?: "local" | "cloud" | "unknown";
+    fallbackUsed?: boolean;
+    fallbackReason?: string | null;
+  }) => {
+    await safeRecordAiTelemetryEvent({
+      taskName,
+      taskType: options.taskType,
+      callingModule: options.callingModule ?? null,
+      provider: input.provider ?? config.provider,
+      model: input.model ?? taskConfig.model ?? config.model,
+      runtimeRoute: input.runtimeRoute ?? "unavailable",
+      localOrCloud: input.localOrCloud ?? (config.mode === "local" ? "local" : config.mode === "cloud" ? "cloud" : "unknown"),
+      sensitivityLevel: options.sensitivityLevel ?? null,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      latencyMs: Date.now() - startedAtMs,
+      success: false,
+      errorType: classifyTelemetryErrorType({ failureKind: input.failureKind, errorSummary: input.error }),
+      errorSummary: input.error,
+      fallbackUsed: Boolean(input.fallbackUsed),
+      fallbackReason: input.fallbackReason ?? null,
+      inputTokenEstimate: estimateTokensFromText(serializedInput),
+      outputTokenEstimate: null,
+      totalTokenEstimate: estimateTokensFromText(serializedInput),
+      estimatedCost: null,
+    });
+  };
 
   if (!config.enabled) {
+    await recordEarlyFailure({
+      error: "Local AI runtime is disabled",
+      failureKind: "runtime_error",
+      runtimeRoute: "unavailable",
+      provider: config.provider,
+      model: config.model,
+      localOrCloud: config.mode === "local" ? "local" : "cloud",
+    });
     return {
       success: false,
       error: "Local AI runtime is disabled",
@@ -580,6 +641,14 @@ export async function callAI<T = unknown>(
   }
 
   if (!taskConfig.enabled) {
+    await recordEarlyFailure({
+      error: `AI task "${options.taskType}" is disabled in settings`,
+      failureKind: "runtime_error",
+      runtimeRoute: "unavailable",
+      provider: config.provider,
+      model: taskConfig.model ?? config.model,
+      localOrCloud: config.mode === "local" ? "local" : "cloud",
+    });
     return {
       success: false,
       error: `AI task "${options.taskType}" is disabled in settings`,
@@ -595,12 +664,30 @@ export async function callAI<T = unknown>(
   let runtimeCandidates = buildRuntimeCandidates(config, taskConfig, monthlyBudgetReached);
 
   if (runtimeCandidates.length === 0) {
+    const error =
+      taskConfig.preferredRuntime === "secondary"
+        ? "Secondary AI runtime is not available. Set OPENROUTER_API_KEY in env."
+        : "No AI runtime is available for this task.";
+    await recordEarlyFailure({
+      error,
+      failureKind: monthlyBudgetReached ? "rate_limited" : "runtime_error",
+      runtimeRoute: "unavailable",
+      provider: taskConfig.preferredRuntime === "secondary" ? config.secondaryRuntime.provider : config.provider,
+      model: taskConfig.model ?? config.model,
+      localOrCloud:
+        taskConfig.preferredRuntime === "secondary"
+          ? config.secondaryRuntime.mode === "local"
+            ? "local"
+            : "cloud"
+          : config.mode === "local"
+            ? "local"
+            : "cloud",
+      fallbackUsed: false,
+      fallbackReason: monthlyBudgetReached ? "No secondary runtime available after monthly budget threshold." : null,
+    });
     return {
       success: false,
-      error:
-        taskConfig.preferredRuntime === "secondary"
-          ? "Secondary AI runtime is not available. Set OPENROUTER_API_KEY in env."
-          : "No AI runtime is available for this task.",
+      error,
       failureKind: monthlyBudgetReached ? "rate_limited" : "runtime_error",
       effectiveTimeoutMs,
     };
@@ -618,10 +705,20 @@ export async function callAI<T = unknown>(
       );
       if (secondaryCandidates.length > 0 && isUsageLimitReason(rateCheck.reason)) {
         runtimeCandidates = secondaryCandidates;
+        forcedSecondaryRoute = true;
       } else {
+        const rateLimitError = rateCheck.reason || "AI rate limit rejected request";
+        await recordEarlyFailure({
+          error: rateLimitError,
+          failureKind: "rate_limited",
+          runtimeRoute: "unavailable",
+          provider: config.provider,
+          model: taskConfig.model ?? config.model,
+          localOrCloud: config.mode === "local" ? "local" : "cloud",
+        });
         return {
           success: false,
-          error: rateCheck.reason,
+          error: rateLimitError,
           failureKind: "rate_limited",
           attemptCount: 0,
           fallbackAttempted: false,
@@ -636,8 +733,6 @@ export async function callAI<T = unknown>(
   let lastRawOutput = "";
   let totalAttemptCount = 0;
   let fallbackAttempted = false;
-  const serializedInput = getSerializedInput(options.rawInput ?? options.prompt);
-  const inputBytes = getByteLength(serializedInput);
 
   for (let runtimeIndex = 0; runtimeIndex < runtimeCandidates.length; runtimeIndex++) {
     const runtime = runtimeCandidates[runtimeIndex];
@@ -727,6 +822,57 @@ export async function callAI<T = unknown>(
               : {}),
           });
 
+          const runtimeRoute =
+            runtime.target === "secondary"
+              ? taskConfig.preferredRuntime === "secondary"
+                ? "secondary-preferred"
+                : forcedSecondaryRoute || monthlyBudgetReached
+                  ? "secondary-budget-route"
+                  : "secondary-fallback-runtime"
+              : modelIndex > 0
+                ? "primary-fallback-model"
+                : "primary";
+          const inputTokenEstimate =
+            typeof result.promptTokens === "number"
+              ? result.promptTokens
+              : estimateTokensFromText(serializedInput);
+          const outputTokenEstimate =
+            typeof result.completionTokens === "number"
+              ? result.completionTokens
+              : estimateTokensFromText(result.rawOutput);
+
+          await safeRecordAiTelemetryEvent({
+            taskName,
+            taskType: options.taskType,
+            callingModule: options.callingModule ?? null,
+            provider: runtime.provider,
+            model: result.model,
+            runtimeRoute,
+            localOrCloud: runtime.mode === "local" ? "local" : runtime.mode === "cloud" ? "cloud" : "unknown",
+            sensitivityLevel: options.sensitivityLevel ?? null,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            latencyMs: Date.now() - startedAtMs,
+            success: true,
+            errorType: null,
+            errorSummary: null,
+            fallbackUsed: meta.fallbackUsed,
+            fallbackReason:
+              meta.fallbackUsed
+                ? runtime.target === "secondary"
+                  ? forcedSecondaryRoute || monthlyBudgetReached
+                    ? "Primary runtime budget or rate limit routed execution to secondary runtime."
+                    : "Primary runtime failed and secondary runtime succeeded."
+                  : modelIndex > 0
+                    ? "Primary model failed and fallback model succeeded."
+                    : null
+                : null,
+            inputTokenEstimate,
+            outputTokenEstimate,
+            totalTokenEstimate: inputTokenEstimate + outputTokenEstimate,
+            estimatedCost: estimatedCostGbp,
+          });
+
           return {
             success: true,
             data: result.parsed as T,
@@ -763,6 +909,51 @@ export async function callAI<T = unknown>(
     ...(config.logPromptPreviews
       ? { inputPreview: serializedInput.slice(0, 200) }
       : {}),
+  });
+
+  const finalRuntime = runtimeCandidates[runtimeCandidates.length - 1] || null;
+  const finalRuntimeRoute =
+    !finalRuntime
+      ? "unavailable"
+      : finalRuntime.target === "secondary"
+        ? taskConfig.preferredRuntime === "secondary"
+          ? "secondary-preferred"
+          : forcedSecondaryRoute || monthlyBudgetReached
+            ? "secondary-budget-route"
+            : "secondary-fallback-runtime"
+        : "primary";
+  await safeRecordAiTelemetryEvent({
+    taskName,
+    taskType: options.taskType,
+    callingModule: options.callingModule ?? null,
+    provider: finalRuntime?.provider ?? config.provider,
+    model: finalRuntime?.model ?? taskConfig.model ?? config.model,
+    runtimeRoute: finalRuntimeRoute,
+    localOrCloud:
+      finalRuntime?.mode === "local"
+        ? "local"
+        : finalRuntime?.mode === "cloud"
+          ? "cloud"
+          : config.mode === "local"
+            ? "local"
+            : config.mode === "cloud"
+              ? "cloud"
+              : "unknown",
+    sensitivityLevel: options.sensitivityLevel ?? null,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    latencyMs: Date.now() - startedAtMs,
+    success: false,
+    errorType: classifyTelemetryErrorType({ failureKind: lastFailureKind, errorSummary: lastError }),
+    errorSummary: lastError,
+    fallbackUsed: runtimeCandidates.length > 1 || fallbackAttempted,
+    fallbackReason: fallbackAttempted ? "All fallback candidates were attempted and failed." : null,
+    inputTokenEstimate: estimateTokensFromText(serializedInput),
+    outputTokenEstimate: lastRawOutput ? estimateTokensFromText(lastRawOutput) : null,
+    totalTokenEstimate: lastRawOutput
+      ? estimateTokensFromText(serializedInput) + estimateTokensFromText(lastRawOutput)
+      : estimateTokensFromText(serializedInput),
+    estimatedCost: null,
   });
 
   return {
