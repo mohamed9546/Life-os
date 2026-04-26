@@ -65,6 +65,7 @@ vi.mock("./telemetry", () => ({
   classifyTelemetryErrorType: vi.fn().mockImplementation(({ failureKind, errorSummary }) => failureKind || errorSummary || null),
 }));
 
+import { recordAiTelemetryEvent } from "./telemetry";
 import { callAI } from "./client";
 
 describe("ai client telemetry resilience", () => {
