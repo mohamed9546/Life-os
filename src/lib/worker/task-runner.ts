@@ -557,8 +557,11 @@ async function runRankTask(): Promise<Record<string, unknown>> {
 
 async function runFullPipelineTask(): Promise<Record<string, unknown>> {
   const result = await runFullPipeline({
+    userId: WORKER_USER_ID,
     budgetProfile: "worker",
     maxEnrich: resolvePipelineEnrichmentBudget("worker"),
+    includeGmailAlerts: true,
+    gmailMaxMessages: 25,
   });
   return {
     fetched: result.summary.fetched,

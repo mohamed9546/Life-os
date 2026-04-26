@@ -35,7 +35,9 @@ import {
   FilterBar as SysFilterBar,
 } from "@/components/ui/system";
 import { getRoleTrackLabel } from "@/lib/career/role-track-labels";
+import { getSourceBadgeClassName, getSourceLabel } from "@/lib/jobs/source-meta";
 import { cn } from "@/lib/utils";
+import { OpenCodeAppsStatusPanel } from "./open-code-apps-status";
 
 // ---- Types ----
 
@@ -175,9 +177,11 @@ export function CareerDashboard() {
 
   const allSources = useMemo(() => {
     const s = new Set<string>();
-    [...jobs.inbox, ...jobs.ranked, ...jobs.tracked].forEach((j) => s.add(j.raw.source));
+    [...jobs.inbox, ...jobs.ranked, ...jobs.tracked, ...jobs.rejected].forEach((j) =>
+      s.add(j.raw.source)
+    );
     return Array.from(s).sort();
-  }, [jobs.inbox, jobs.ranked, jobs.tracked]);
+  }, [jobs.inbox, jobs.ranked, jobs.tracked, jobs.rejected]);
 
   const hasDetail = selectedJob !== null;
 
@@ -223,6 +227,8 @@ export function CareerDashboard() {
         onJobsRefresh={() => void jobs.refresh()}
       />
 
+      <OpenCodeAppsStatusPanel />
+
       {/* Section nav */}
       <SysFilterBar
         options={[
@@ -260,6 +266,7 @@ export function CareerDashboard() {
           {section === "pipeline" && (
             <PipelineSection
               jobs={jobs}
+              sources={allSources}
               selectedJob={selectedJob}
               onSelect={setSelectedJob}
             />
@@ -317,7 +324,7 @@ function CareerHero({
             Career Pipeline Manager
           </h1>
           <p className="mt-2 text-sm leading-7 text-slate-400 max-w-lg">
-            Paste, rank, evaluate, and act on CTA/CRA support, QA, Regulatory, Clinical, and Medical Information roles.
+            Paste, rank, evaluate, and act on a CTA-first pipeline, with clinical-trial-support roles prioritised above QA, regulatory, and other secondary lanes.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <StatusChip tone={jobs.sources.filter((s) => s.active).length > 0 ? "success" : "warning"}>
@@ -397,11 +404,17 @@ function KpiCell({
 function PipelineResultBanner({ result }: { result: PipelineApiResult }) {
   const s = result.summary;
   if (!s) return null;
+  const sourceSummary = (result.fetchResults || [])
+    .filter((item) => item.jobsFetched > 0)
+    .slice(0, 4)
+    .map((item) => `${getSourceLabel(item.source)} ${item.jobsFetched}`)
+    .join(" · ");
   return (
     <AlertBanner
       tone="info"
       title={`Pipeline complete — ${s.fetched} fetched, ${s.dedupedNew} new, ${s.enriched} enriched, ${s.ranked} ranked`}
       description={[
+        sourceSummary ? `Sources: ${sourceSummary}` : null,
         s.contactsGenerated > 0 ? `${s.contactsGenerated} contacts` : null,
         s.outreachGenerated > 0 ? `${s.outreachGenerated} outreach` : null,
         s.failed > 0 ? `${s.failed} failed` : null,
@@ -500,13 +513,23 @@ function AutoApplyPanel({
         success?: boolean;
         processed?: number;
         imported?: number;
+        skipped?: number;
+        failed?: number;
+        sourceBreakdown?: Array<{ source: string; count: number }>;
         error?: string;
       };
       if (!response.ok || data.success === false) {
         throw new Error(data.error || "Gmail sync failed");
       }
+      const sourceSummary = (data.sourceBreakdown || [])
+        .slice(0, 4)
+        .map((item) => `${item.count} ${getSourceLabel(item.source)}`)
+        .join(", ");
       setGmailSyncMessage(
-        `Gmail sync checked ${data.processed ?? 0} alerts and imported ${data.imported ?? 0} jobs.`
+        `Gmail sync checked ${data.processed ?? 0} alerts and imported ${data.imported ?? 0} jobs` +
+          `${data.skipped ? `; ${data.skipped} had no usable jobs` : ""}` +
+          `${data.failed ? `; ${data.failed} failed to read` : ""}` +
+          `${sourceSummary ? `. Sources: ${sourceSummary}.` : "."}`
       );
       await Promise.all([onRefresh(), onJobsRefresh()]);
     } catch (err) {
@@ -1121,7 +1144,7 @@ function RankedJobCard({
                     {getRoleTrackLabel(parsed.roleTrack)}
                   </span>
                 )}
-                <span className="badge-neutral text-[9px]">{job.raw.source}</span>
+                <SourcePill source={job.raw.source} className="text-[9px]" />
                 {parsed?.remoteType === "remote" && (
                   <span className="badge-accent text-[9px]">Remote</span>
                 )}
@@ -1239,14 +1262,17 @@ const STAGE_LABELS: Record<string, string> = {
 
 function PipelineSection({
   jobs,
+  sources,
   selectedJob,
   onSelect,
 }: {
   jobs: ReturnType<typeof useJobs>;
+  sources: string[];
   selectedJob: EnrichedJob | null;
   onSelect: (j: EnrichedJob | null) => void;
 }) {
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [filters, setFilters] = useState<JobFilters>(DEFAULT_FILTERS);
 
   const all = useMemo(
     () =>
@@ -1256,9 +1282,27 @@ function PipelineSection({
     [jobs.tracked, jobs.inbox, jobs.rejected]
   );
 
-  const filtered = useMemo(
-    () => stageFilter === "all" ? all : all.filter((j) => j.status === stageFilter),
+  const availableRoleTracks = useMemo(() => {
+    const tracks = new Set<string>();
+    all.forEach((job) => {
+      const roleTrack = job.parsed?.data?.roleTrack;
+      if (roleTrack) {
+        tracks.add(roleTrack);
+      }
+    });
+    return ["clinical", "qa", "regulatory", "medinfo", "other"].filter((track) =>
+      tracks.has(track)
+    );
+  }, [all]);
+
+  const stageFiltered = useMemo(
+    () => (stageFilter === "all" ? all : all.filter((j) => j.status === stageFilter)),
     [all, stageFilter]
+  );
+
+  const filtered = useMemo(
+    () => applyFilters(stageFiltered, filters),
+    [stageFiltered, filters]
   );
 
   const stageCounts = useMemo(() => {
@@ -1286,10 +1330,34 @@ function PipelineSection({
         onChange={setStageFilter}
       />
 
-      {filtered.length === 0 ? (
+      <JobFilterBar
+        filters={filters}
+        onChange={setFilters}
+        availableSources={sources}
+        availableRoleTracks={availableRoleTracks}
+        jobCount={filtered.length}
+        totalCount={stageFiltered.length}
+      />
+
+      {all.length === 0 ? (
+        <EmptyState
+          title="No jobs in the pipeline yet"
+          description="Track a ranked job or run the pipeline to start managing applications here."
+        />
+      ) : stageFiltered.length === 0 ? (
         <EmptyState
           title="No jobs in this stage"
           description="Track a ranked job to start managing your pipeline."
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="No jobs match filters"
+          description="Try loosening the source, career-path, or score filters."
+          action={
+            <ActionButton variant="ghost" onClick={() => setFilters(DEFAULT_FILTERS)}>
+              Clear filters
+            </ActionButton>
+          }
         />
       ) : (
         <div className="space-y-2">
@@ -1347,11 +1415,17 @@ function TrackedJobRow({
 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-white truncate">{title}</p>
-        <p className="text-xs text-slate-500 truncate">
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <SourcePill source={job.raw.source} className="text-[9px]" />
+          {parsed?.roleTrack && parsed.roleTrack !== "other" && (
+            <span className="badge-neutral text-[9px]">
+              {getRoleTrackLabel(parsed.roleTrack)}
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-slate-500 truncate">
           {company}
-          {parsed?.roleTrack && parsed.roleTrack !== "other"
-            ? ` · ${getRoleTrackLabel(parsed.roleTrack)}`
-            : ""}
+          {parsed?.location ? ` · ${parsed.location}` : ""}
         </p>
         {fit?.actionRecommendation && (
           <p className="text-[11px] text-slate-600 mt-0.5 truncate">
@@ -1402,6 +1476,20 @@ function TrackedJobRow({
         )}
       </div>
     </div>
+  );
+}
+
+function SourcePill({ source, className }: { source: string; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-1.5 py-0.5 font-medium",
+        getSourceBadgeClassName(source),
+        className
+      )}
+    >
+      {getSourceLabel(source)}
+    </span>
   );
 }
 

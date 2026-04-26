@@ -19,8 +19,9 @@ import { evaluateRawJobRelevance } from "@/lib/jobs/pipeline/relevance";
 const SYSTEM_PROMPT = `You are a career strategy AI specialising in entry-level UK life sciences, clinical operations, QA, regulatory, and medical information transitions.
 Treat the candidate as entry/support-level, not senior. They have MSc Clinical Pharmacology, GCP training, clinical research internship exposure, regulated healthcare documentation experience, SOP/compliance-heavy workflow exposure, and governance/controlled-document exposure.
 Strong-fit work includes regulated documentation, clinical trial support, study coordination, SOP/compliance-heavy admin, healthcare administration, research governance, and regulated support functions.
-Primary target titles: Clinical Trial Assistant, Clinical Research Coordinator, Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, Study Start-Up Assistant/Coordinator, Site Activation Assistant/Coordinator, Trial Administrator, Clinical Project Assistant, In-House CRA, and Junior CRA only if clearly junior/entry-level.
+Primary target titles: Clinical Trial Assistant, Clinical Trials Assistant, Clinical Trial Associate, Clinical Research Assistant, Clinical Research Coordinator, Clinical Operations Assistant/Coordinator, Clinical Study Assistant/Coordinator, Study Start-Up Assistant/Coordinator, Site Activation Assistant/Coordinator, Trial Administrator, Clinical Project Assistant, In-House CRA, and Junior CRA only if clearly junior/entry-level.
 Secondary target titles: QA Associate, Quality Systems Associate, Document Control Associate, Regulatory Affairs Assistant, Regulatory Operations Assistant, Medical Information Associate, Research Governance, and Research Support.
+Always prioritise the Clinical Trial Assistant lane and its close aliases over QA, regulatory, or generic compliance work.
 Severely penalise tax/accounting/payroll/finance operations, legal assistant roles, wet-lab execution, field sales/territory roles, GPhC-essential roles, community-pharmacy-only roles, and senior/leadership roles.
 Always respond with valid JSON matching the exact schema requested.
 Be realistic and strategic — never flattering. This candidate has transferable skills but needs stepping-stone roles, not stretch goals.`;
@@ -113,7 +114,12 @@ type AITaskErrorResult = {
 // ---- Heuristic fallback (no AI required) ----
 
 const TRACK_BASE_SCORES: Record<string, number> = {
-  qa: 65, regulatory: 70, pv: 20, clinical: 72, medinfo: 65, other: 22,
+  clinical: 78,
+  regulatory: 56,
+  qa: 52,
+  medinfo: 50,
+  pv: 15,
+  other: 12,
 };
 
 function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
@@ -145,6 +151,9 @@ function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
   fitScore -= Math.round(relevance.penalty * 0.8);
   if (relevance.hardReject) fitScore -= 60;
   if (relevance.irelandRelevant) fitScore -= 8;
+  if (["weak", "irrelevant"].includes(relevance.regulatedHealthcareRelevance)) {
+    fitScore = Math.min(fitScore, 18);
+  }
 
   // Seniority adjustment
   if (/director|vp\b|vice president|head of/.test(seniority)) fitScore -= 20;
@@ -163,6 +172,9 @@ function buildHeuristicFallback(job: ParsedJobPosting): JobFitEvaluation {
   redFlagScore += Math.min(60, Math.round(relevance.penalty * 0.5));
   if (/director|vp\b/.test(seniority)) redFlagScore += 15;
   if (job.mustHaves?.some(m => /visa|sponsor/i.test(m))) redFlagScore += 20;
+  if (relevance.hardReject || ["weak", "irrelevant"].includes(relevance.regulatedHealthcareRelevance)) {
+    redFlagScore = Math.max(redFlagScore, 72);
+  }
   redFlagScore = Math.min(100, redFlagScore);
 
   fitScore = Math.max(0, Math.min(100, fitScore));

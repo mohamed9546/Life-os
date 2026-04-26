@@ -4,6 +4,7 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
+import { getAppConfig } from "@/lib/config/app-config";
 import {
   JobSourceAdapter,
   JobSearchQuery,
@@ -16,8 +17,8 @@ export class GuardianJobsAdapter implements JobSourceAdapter {
   readonly displayName = "Guardian Jobs (UK)";
 
   async isConfigured(): Promise<boolean> {
-    // Guardian Jobs RSS returns 404 — disabled until the feed URL is confirmed working
-    return false;
+    const config = await getAppConfig();
+    return Boolean(config.jobSources.guardianjobs?.enabled);
   }
 
   async fetchJobs(query: JobSearchQuery): Promise<JobSourceResult> {
@@ -25,14 +26,16 @@ export class GuardianJobsAdapter implements JobSourceAdapter {
 
     try {
       const keywords = query.keywords.join(" ");
-      const location = query.location || "uk";
+      const location = query.location || "United Kingdom";
       const params = new URLSearchParams({
-        q: keywords,
-        location,
-        format: "rss",
+        countrycode: "GB",
       });
 
-      const url = `https://jobs.guardian.co.uk/results/rss/?${params.toString()}`;
+      if (keywords.trim()) {
+        params.set("keywords", keywords);
+      }
+
+      const url = `https://jobs.theguardian.com/jobsrss/?${params.toString()}`;
 
       const response = await fetch(url, {
         headers: {
@@ -49,19 +52,22 @@ export class GuardianJobsAdapter implements JobSourceAdapter {
       const xml = await response.text();
       const items = parseRSSItems(xml);
       const maxResults = query.maxResults || 30;
-      const limited = items.slice(0, maxResults);
+      const limited = items
+        .filter((item) => matchesGuardianQuery(item, query))
+        .slice(0, maxResults);
 
       const jobs: RawJobItem[] = limited.map((item) =>
         normalizeRawJob({
           source: this.sourceId,
           sourceJobId: `guardian-${item.guid.replace(/[^a-zA-Z0-9]/g, "").slice(-20)}`,
-          title: item.title,
+          title: item.jobTitle,
           company: item.company || "Unknown",
           location: item.location || location,
           link: item.link,
           postedAt: item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
-          employmentType: detectEmploymentType(item.title, item.description),
-          remoteType: detectRemoteType(item.title, item.location, item.description),
+          salaryText: item.salary || undefined,
+          employmentType: detectEmploymentType(item.jobTitle, item.description),
+          remoteType: detectRemoteType(item.jobTitle, item.location, item.description),
           description: item.description,
           raw: item,
           fetchedAt: now,
@@ -84,10 +90,12 @@ export class GuardianJobsAdapter implements JobSourceAdapter {
 
 interface RSSItem {
   title: string;
+  jobTitle: string;
   company: string;
   location: string;
   link: string;
   description: string;
+  salary: string;
   pubDate: string;
   guid: string;
 }
@@ -98,17 +106,100 @@ function parseRSSItems(xml: string): RSSItem[] {
   let m;
   while ((m = itemRe.exec(xml)) !== null) {
     const chunk = m[1];
+    const title = extractText(chunk, "title");
+    const rawDescription = extractCDATA(chunk, "description") || extractText(chunk, "description");
+    const summary = parseGuardianDescription(rawDescription);
+    const description = stripHtml(rawDescription);
+    const splitTitle = splitGuardianTitle(title);
     items.push({
-      title: extractText(chunk, "title"),
-      company: extractText(chunk, "guardian:company") || extractText(chunk, "dc:creator"),
-      location: extractText(chunk, "guardian:location"),
+      title,
+      jobTitle: splitTitle.jobTitle,
+      company: splitTitle.company || summary.company,
+      location: summary.location,
       link: extractText(chunk, "link"),
-      description: stripHtml(extractCDATA(chunk, "description") || extractText(chunk, "description")),
+      description,
+      salary: summary.salary,
       pubDate: extractText(chunk, "pubDate"),
       guid: extractText(chunk, "guid"),
     });
   }
-  return items.filter((i) => i.title && i.link);
+  return items.filter((i) => i.jobTitle && i.link);
+}
+
+function splitGuardianTitle(value: string): { company: string; jobTitle: string } {
+  const separatorIndex = value.indexOf(":");
+  if (separatorIndex > 0 && separatorIndex < value.length - 1) {
+    return {
+      company: value.slice(0, separatorIndex).trim(),
+      jobTitle: value.slice(separatorIndex + 1).trim(),
+    };
+  }
+
+  return { company: "", jobTitle: value.trim() };
+}
+
+function parseGuardianDescription(value: string): {
+  salary: string;
+  company: string;
+  location: string;
+} {
+  const lines = value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>|<\/div>|<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return {
+    salary: lines[0] || "",
+    company: lines[1]?.replace(/:$/, "") || "",
+    location: lines[lines.length - 1] || "",
+  };
+}
+
+function matchesGuardianQuery(item: RSSItem, query: JobSearchQuery): boolean {
+  const haystack = [
+    item.jobTitle,
+    item.company,
+    item.location,
+    item.description,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const keywords = query.keywords.map((keyword) => keyword.trim().toLowerCase()).filter(Boolean);
+  if (keywords.length > 0 && !keywords.some((keyword) => haystack.includes(keyword))) {
+    return false;
+  }
+
+  if (query.location) {
+    const location = query.location.toLowerCase();
+    const itemLocation = item.location.toLowerCase();
+    if (itemLocation && !matchesGuardianLocation(itemLocation, location)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function matchesGuardianLocation(itemLocation: string, requestedLocation: string): boolean {
+  if (["uk", "united kingdom", "great britain", "england"].includes(requestedLocation)) {
+    return true;
+  }
+
+  if (requestedLocation === "scotland") {
+    return /scotland|glasgow|edinburgh|aberdeen|dundee|stirling|perth\b/.test(itemLocation);
+  }
+
+  return (
+    itemLocation.includes(requestedLocation) ||
+    itemLocation.includes("uk") ||
+    itemLocation.includes("united kingdom") ||
+    itemLocation.includes("remote") ||
+    itemLocation.includes("hybrid")
+  );
 }
 
 function extractText(xml: string, tag: string): string {

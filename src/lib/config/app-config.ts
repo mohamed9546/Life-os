@@ -41,6 +41,7 @@ export function getDefaultAppConfig(): AppConfig {
       indeed: { enabled: true },
       weworkremotely: { enabled: true },
       guardianjobs: { enabled: true },
+      nhsjobs: { enabled: true },
       linkedin: { enabled: true },
       rapidApiLinkedin: { enabled: true, apiKey: "" },
     },
@@ -158,6 +159,10 @@ export async function getAppConfig(): Promise<AppConfig> {
       guardianjobs: {
         ...defaults.jobSources.guardianjobs,
         ...stored.jobSources?.guardianjobs,
+      },
+      nhsjobs: {
+        ...defaults.jobSources.nhsjobs,
+        ...stored.jobSources?.nhsjobs,
       },
     },
     enrichment: {

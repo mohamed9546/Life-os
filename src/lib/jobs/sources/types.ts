@@ -130,6 +130,18 @@ export const DEFAULT_SEARCH_QUERIES: JobSearchQuery[] = [
     maxResults: 25,
   },
   {
+    keywords: ["clinical trial associate"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
+    location: "Scotland",
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical research assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
+    location: "Scotland",
+    maxResults: 25,
+  },
+  {
     keywords: ["clinical research coordinator"],
     negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal"],
     location: "Scotland",
@@ -169,6 +181,24 @@ export const DEFAULT_SEARCH_QUERIES: JobSearchQuery[] = [
   // --- UK-wide primary targets ---
   {
     keywords: ["clinical trial assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical trials assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical trial associate"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
+    location: "United Kingdom",
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical research assistant"],
     negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead", "principal", "director"],
     location: "United Kingdom",
     maxResults: 25,
@@ -255,6 +285,20 @@ export const DEFAULT_SEARCH_QUERIES: JobSearchQuery[] = [
   // --- UK-wide remote/hybrid primary ---
   {
     keywords: ["clinical trial assistant"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical trial associate"],
+    negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead"],
+    location: "United Kingdom",
+    remoteOnly: true,
+    maxResults: 25,
+  },
+  {
+    keywords: ["clinical research assistant"],
     negativeKeywords: [...PHARMA_NEGATIVE_KEYWORDS, "senior", "lead"],
     location: "United Kingdom",
     remoteOnly: true,

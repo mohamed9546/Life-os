@@ -16,6 +16,14 @@ export async function POST(request: NextRequest) {
         typeof body.maxMessages === "number" ? body.maxMessages : undefined,
     });
     const filteredJobs = filterFetchedJobs(result.jobs);
+    const sourceBreakdown = Array.from(
+      filteredJobs.reduce((counts, job) => {
+        counts.set(job.source, (counts.get(job.source) || 0) + 1);
+        return counts;
+      }, new Map<string, number>())
+    )
+      .map(([source, count]) => ({ source, count }))
+      .sort((left, right) => right.count - left.count || left.source.localeCompare(right.source));
 
     if (filteredJobs.length > 0) {
       await saveRawJobs(filteredJobs, user.id);
@@ -26,6 +34,7 @@ export async function POST(request: NextRequest) {
       ...result,
       jobs: filteredJobs,
       imported: filteredJobs.length,
+      sourceBreakdown,
     });
   } catch (err) {
     return NextResponse.json(

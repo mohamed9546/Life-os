@@ -14,6 +14,7 @@ import {
   getJobRankingState,
   hasOutreachDraft,
 } from "@/lib/jobs/selectors";
+import { getSourceBadgeClassName, getSourceLabel } from "@/lib/jobs/source-meta";
 
 interface JobDetailPanelProps {
   job: EnrichedJob;
@@ -735,32 +736,11 @@ function ListBlock({ title, items }: { title: string; items: string[] }) {
 }
 
 function SourceChip({ source }: { source: string }) {
-  const colors: Record<string, string> = {
-    adzuna: "bg-emerald-500/10 text-emerald-400",
-    reed: "bg-orange-500/10 text-orange-400",
-    serpapi: "bg-slate-900/10 text-slate-700",
-    greenhouse: "bg-green-500/10 text-green-400",
-    lever: "bg-purple-500/10 text-purple-400",
-    jooble: "bg-fuchsia-500/10 text-fuchsia-400",
-    remotive: "bg-cyan-500/10 text-cyan-400",
-    arbeitnow: "bg-yellow-500/10 text-yellow-400",
-    himalayas: "bg-teal-500/10 text-teal-400",
-    brightnetwork: "bg-sky-500/10 text-sky-400",
-    linkedin: "bg-blue-500/10 text-blue-400",
-    "rapidapi-linkedin": "bg-blue-500/10 text-blue-400",
-    findwork: "bg-pink-500/10 text-pink-400",
-    careerjet: "bg-amber-500/10 text-amber-400",
-    themuse: "bg-rose-500/10 text-rose-400",
-    scraper: "bg-gray-500/10 text-gray-400",
-  };
-
   return (
     <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded text-2xs font-medium ${
-        colors[source] || "bg-surface-3 text-text-tertiary"
-      }`}
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-2xs font-medium ${getSourceBadgeClassName(source)}`}
     >
-      {source}
+      {getSourceLabel(source)}
     </span>
   );
 }

@@ -6,6 +6,7 @@
 import { AIFailureKind, AIMetadata, ParsedJobPosting, AIResult } from "@/types";
 import { callAI } from "../client";
 import { ParsedJobPostingSchema, validateAIOutput } from "../schemas";
+import { evaluateRawJobRelevance } from "@/lib/jobs/pipeline/relevance";
 
 const SYSTEM_PROMPT = `You are a job posting parser for the UK life sciences / pharma job market.
 Your task is to extract structured information from job postings.
@@ -39,8 +40,11 @@ const FINANCIAL_OVERRIDE_TERMS = [
 const TRACK_KEYWORDS = {
   clinical: [
     "clinical trial",
+    "clinical trials assistant",
     "clinical operations",
     "clinical trial assistant",
+    "clinical trial associate",
+    "clinical research assistant",
     "clinical operations assistant",
     "clinical operations coordinator",
     "clinical study assistant",
@@ -93,7 +97,6 @@ const TRACK_KEYWORDS = {
     "deviation",
     "deviation management",
     "capa",
-    "compliance",
     "gdocp",
     "qms",
     "quality management system",
@@ -123,6 +126,15 @@ const TRACK_KEYWORDS = {
     "medical copywriter",
   ],
 } as const;
+
+const SYNTHETIC_FIELD_PREFIXES = [
+  "title",
+  "company",
+  "location",
+  "salary",
+  "type",
+  "remote",
+] as const;
 
 function buildPrompt(rawText: string, metadata?: Record<string, string>): string {
   const metaBlock = metadata
@@ -170,7 +182,7 @@ function detectRoleTrack(text: string): ParsedJobPosting["roleTrack"] {
   }
 
   for (const [roleTrack, keywords] of Object.entries(TRACK_KEYWORDS)) {
-    if (keywords.some((keyword) => lower.includes(keyword))) {
+    if (keywords.some((keyword) => hasKeyword(lower, keyword))) {
       return roleTrack as ParsedJobPosting["roleTrack"];
     }
   }
@@ -194,17 +206,23 @@ function detectEmploymentType(text: string): ParsedJobPosting["employmentType"] 
 
 function detectRemoteType(text: string): ParsedJobPosting["remoteType"] {
   const lower = text.toLowerCase();
-  if (lower.includes("hybrid")) {
+  const cleaned = lower
+    .replace(/remote\s*:\s*unknown/gi, "")
+    .replace(/remote\s*:\s*onsite/gi, "onsite")
+    .replace(/remote\s*:\s*hybrid/gi, "hybrid")
+    .replace(/remote\s*:\s*remote/gi, "remote");
+
+  if (cleaned.includes("hybrid")) {
     return "hybrid";
   }
-  if (lower.includes("remote")) {
+  if (/\bremote\b/.test(cleaned)) {
     return "remote";
   }
   if (
-    lower.includes("on site") ||
-    lower.includes("onsite") ||
-    lower.includes("office-based") ||
-    lower.includes("office based")
+    cleaned.includes("on site") ||
+    cleaned.includes("onsite") ||
+    cleaned.includes("office-based") ||
+    cleaned.includes("office based")
   ) {
     return "onsite";
   }
@@ -233,22 +251,53 @@ function extractSalaryText(text: string): string | null {
   return salaryMatch?.[1]?.trim() || null;
 }
 
+function hasKeyword(text: string, keyword: string): boolean {
+  return buildKeywordPattern(keyword).test(text);
+}
+
+function buildKeywordPattern(keyword: string): RegExp {
+  const normalized = keyword.trim().toLowerCase();
+  const escaped = normalized
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "[\\s-]+");
+
+  if (/^[a-z0-9]{2,4}$/.test(normalized)) {
+    return new RegExp(`\\b${escaped}\\b`, "i");
+  }
+
+  return new RegExp(`\\b${escaped}\\b`, "i");
+}
+
+function stripSyntheticFieldPrefix(value: string): string {
+  let cleaned = value.trim();
+  for (const prefix of SYNTHETIC_FIELD_PREFIXES) {
+    cleaned = cleaned.replace(new RegExp(`^${prefix}\\s*:\\s*`, "i"), "");
+  }
+  return cleaned.trim();
+}
+
+function cleanSyntheticMetadata(value?: string | null): string {
+  return stripSyntheticFieldPrefix(value || "");
+}
+
 function pickTitle(rawText: string, metadata?: Record<string, string>): string {
-  if (metadata?.title?.trim()) {
-    return metadata.title.trim();
+  const metadataTitle = cleanSyntheticMetadata(metadata?.title);
+  if (metadataTitle) {
+    return metadataTitle;
   }
 
   const firstLine = rawText
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((line) => stripSyntheticFieldPrefix(line.trim()))
     .find((line) => line.length >= 4 && line.length <= 120);
 
   return firstLine || "Unknown role";
 }
 
 function pickCompany(rawText: string, metadata?: Record<string, string>): string {
-  if (metadata?.company?.trim()) {
-    return metadata.company.trim();
+  const metadataCompany = cleanSyntheticMetadata(metadata?.company);
+  if (metadataCompany) {
+    return metadataCompany;
   }
 
   const byCompany = rawText.match(/(?:company|employer)\s*[:\-]\s*([^\n\r]+)/i);
@@ -256,8 +305,9 @@ function pickCompany(rawText: string, metadata?: Record<string, string>): string
 }
 
 function pickLocation(rawText: string, metadata?: Record<string, string>): string {
-  if (metadata?.location?.trim()) {
-    return metadata.location.trim();
+  const metadataLocation = cleanSyntheticMetadata(metadata?.location);
+  if (metadataLocation) {
+    return metadataLocation;
   }
 
   const byLocation = rawText.match(/location\s*[:\-]\s*([^\n\r]+)/i);
@@ -298,11 +348,37 @@ function buildDeterministicFallback(
   failureKind?: AIFailureKind
 ): ParsedJobPosting {
   const lower = rawText.toLowerCase();
-  const roleTrack = detectRoleTrack(rawText);
-  const remoteType = detectRemoteType(rawText);
   const title = pickTitle(rawText, metadata);
   const company = pickCompany(rawText, metadata);
   const location = pickLocation(rawText, metadata);
+  const relevance = evaluateRawJobRelevance({
+    source: metadata?.source || "fallback-parse",
+    title,
+    company,
+    location,
+    salaryText: metadata?.salary || extractSalaryText(rawText) || undefined,
+    link: "",
+    employmentType: detectEmploymentType(rawText),
+    remoteType: detectRemoteType(rawText),
+    description: rawText,
+    fetchedAt: new Date().toISOString(),
+  });
+  const detectedRoleTrack = detectRoleTrack(rawText);
+  const roleTrack =
+    relevance.hardReject || ["weak", "irrelevant"].includes(relevance.regulatedHealthcareRelevance)
+      ? "other"
+      : relevance.roleFamily === "clinical-operations"
+        ? "clinical"
+        : relevance.roleFamily === "qa"
+          ? "qa"
+          : relevance.roleFamily === "regulatory"
+            ? "regulatory"
+            : relevance.roleFamily === "pv"
+              ? "pv"
+              : relevance.roleFamily === "medinfo"
+                ? "medinfo"
+                : detectedRoleTrack;
+  const remoteType = detectRemoteType(rawText);
   const mustHaves = extractListBySignals(
     rawText,
     ["must", "required", "experience with", "responsible for"],
@@ -343,7 +419,7 @@ function buildDeterministicFallback(
   const keywordPool = new Set<string>();
   Object.values(TRACK_KEYWORDS).forEach((keywords) => {
     for (const keyword of keywords) {
-      if (lower.includes(keyword)) {
+      if (hasKeyword(lower, keyword)) {
         keywordPool.add(keyword);
       }
     }
@@ -531,9 +607,9 @@ function patchParsedJob(
   const source = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
 
   return {
-    title: coerceString(source.title, fallback.title),
-    company: coerceString(source.company, fallback.company),
-    location: coerceString(source.location, fallback.location),
+    title: stripSyntheticFieldPrefix(coerceString(source.title, fallback.title)),
+    company: stripSyntheticFieldPrefix(coerceString(source.company, fallback.company)),
+    location: stripSyntheticFieldPrefix(coerceString(source.location, fallback.location)),
     salaryText: coerceNullableString(source.salaryText, fallback.salaryText),
     employmentType: coerceEnum(
       source.employmentType,

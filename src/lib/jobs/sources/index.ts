@@ -33,6 +33,7 @@ import { RapidAPILinkedInAdapter } from "./rapidapi-linkedin";
 import { IndeedAdapter } from "./indeed";
 import { WeWorkRemotelyAdapter } from "./weworkremotely";
 import { GuardianJobsAdapter } from "./guardianjobs";
+import { NhsJobsAdapter } from "./nhsjobs";
 
 /**
  * All registered job source adapters.
@@ -60,6 +61,7 @@ export function getAllAdapters(): JobSourceAdapter[] {
     new IndeedAdapter(),
     new WeWorkRemotelyAdapter(),
     new GuardianJobsAdapter(),
+    new NhsJobsAdapter(),
   ];
 }
 

@@ -439,6 +439,47 @@ function mergeTaskSettings(
   return merged;
 }
 
+function isGeminiModel(model?: string | null): boolean {
+  return /^gemini(?:[-/]|$)/i.test((model || "").trim());
+}
+
+function repairLegacySecondaryGeminiRouting(config: AIConfig): AIConfig {
+  if (config.provider !== "gemini") {
+    return config;
+  }
+
+  let changed = false;
+  const repairedTaskSettings = { ...config.taskSettings };
+
+  for (const taskType of AI_TASK_ORDER) {
+    const task = repairedTaskSettings[taskType];
+    const defaultTask = DEFAULT_AI_CONFIG.taskSettings[taskType];
+    const taskModel = task.model?.trim() || config.model;
+
+    // Older saved configs can leave a primary Gemini task pointed at the
+    // secondary OpenRouter runtime while still carrying a Gemini model name.
+    // That sends requests through OpenRouter instead of the direct Gemini API.
+    if (
+      task.preferredRuntime === "secondary" &&
+      defaultTask.preferredRuntime !== "secondary" &&
+      isGeminiModel(taskModel)
+    ) {
+      repairedTaskSettings[taskType] = {
+        ...task,
+        preferredRuntime: "primary",
+      };
+      changed = true;
+    }
+  }
+
+  return changed
+    ? {
+        ...config,
+        taskSettings: repairedTaskSettings,
+      }
+    : config;
+}
+
 function isLegacyLocalAiConfig(config: AIConfig): boolean {
   return (
     config.provider === "ollama" &&
@@ -652,6 +693,8 @@ function normalizeConfig(config?: Partial<AIConfig> | null): AIConfig {
       },
     };
   }
+
+  merged = repairLegacySecondaryGeminiRouting(merged);
 
   return applyEnvOverrides(merged);
 }

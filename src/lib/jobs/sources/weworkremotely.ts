@@ -5,6 +5,7 @@
 // ============================================================
 
 import { RawJobItem } from "@/types";
+import { getAppConfig } from "@/lib/config/app-config";
 import {
   JobSourceAdapter,
   JobSearchQuery,
@@ -17,8 +18,8 @@ export class WeWorkRemotelyAdapter implements JobSourceAdapter {
   readonly displayName = "We Work Remotely";
 
   async isConfigured(): Promise<boolean> {
-    // WWR RSS feeds return 301 redirects — disabled until URL schema is confirmed working
-    return false;
+    const config = await getAppConfig();
+    return Boolean(config.jobSources.weworkremotely?.enabled);
   }
 
   async fetchJobs(query: JobSearchQuery): Promise<JobSourceResult> {
@@ -60,11 +61,11 @@ export class WeWorkRemotelyAdapter implements JobSourceAdapter {
           sourceJobId: `wwr-${item.guid.replace(/[^a-zA-Z0-9]/g, "").slice(-20)}`,
           title: item.title,
           company: item.company,
-          location: "Remote (Worldwide)",
+          location: item.region || "Remote (Worldwide)",
           link: item.link,
           postedAt: item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
           employmentType: detectEmploymentType(item.title, item.description),
-          remoteType: "fully-remote",
+          remoteType: "remote",
           description: item.description,
           raw: item,
           fetchedAt: now,
@@ -99,6 +100,7 @@ function mapCategory(keywords: string[]): string {
 interface RSSItem {
   title: string;
   company: string;
+  region: string;
   link: string;
   description: string;
   pubDate: string;
@@ -112,14 +114,12 @@ function parseRSSItems(xml: string): RSSItem[] {
   while ((m = itemRe.exec(xml)) !== null) {
     const chunk = m[1];
     const raw = extractTag(chunk, "title");
-    // WWR title format: "Company Name | Job Title"
-    const parts = raw.split("|").map((p) => p.trim());
-    const company = parts.length >= 2 ? parts[0] : "Unknown";
-    const title = parts.length >= 2 ? parts.slice(1).join(" | ") : raw;
+    const { company, title } = splitCompanyAndTitle(raw);
 
     items.push({
       title,
       company,
+      region: extractTag(chunk, "region"),
       link: extractTag(chunk, "link") || extractCDATA(chunk, "link"),
       description: stripHtml(extractCDATA(chunk, "description") || extractTag(chunk, "description")),
       pubDate: extractTag(chunk, "pubDate"),
@@ -127,6 +127,21 @@ function parseRSSItems(xml: string): RSSItem[] {
     });
   }
   return items;
+}
+
+function splitCompanyAndTitle(value: string): { company: string; title: string } {
+  const trimmed = value.trim();
+  for (const separator of [":", "|"]) {
+    const index = trimmed.indexOf(separator);
+    if (index > 0 && index < trimmed.length - 1) {
+      return {
+        company: trimmed.slice(0, index).trim(),
+        title: trimmed.slice(index + 1).trim(),
+      };
+    }
+  }
+
+  return { company: "Unknown", title: trimmed };
 }
 
 function extractTag(xml: string, tag: string): string {

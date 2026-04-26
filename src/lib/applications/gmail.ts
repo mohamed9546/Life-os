@@ -4,16 +4,30 @@ import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { readObject, writeObject } from "@/lib/storage";
 import { evaluateRawJobRelevance } from "@/lib/jobs/pipeline/relevance";
+import { callAI } from "@/lib/ai/client";
 import {
   getProcessedGmailAlerts,
   markGmailAlertsProcessed,
 } from "./storage";
+import { z } from "zod";
 
 const GMAIL_TOKEN_OBJECT = "gmail-token";
 const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.compose",
 ];
+
+const GmailExtractedJobsSchema = z.object({
+  jobs: z.array(
+    z.object({
+      title: z.string().min(2),
+      company: z.string().min(1).default("Unknown company"),
+      location: z.string().min(1).default("United Kingdom"),
+      link: z.string().default(""),
+      description: z.string().default(""),
+    })
+  ).max(8),
+});
 
 export interface GmailOAuthClient {
   clientId: string;
@@ -226,19 +240,27 @@ async function getAccessToken(): Promise<string | null> {
 export async function syncGmailJobAlerts(
   userId: string,
   options?: { maxMessages?: number }
-): Promise<{ jobs: RawJobItem[]; processed: number; error?: string }> {
+): Promise<{
+  jobs: RawJobItem[];
+  processed: number;
+  importedMessages: number;
+  skipped: number;
+  failed: number;
+  error?: string;
+}> {
   const token = await getAccessToken();
   if (!token) {
     return {
       jobs: [],
       processed: 0,
+      importedMessages: 0,
+      skipped: 0,
+      failed: 0,
       error: "Gmail is not connected. Set Google OAuth env vars and connect Gmail.",
     };
   }
 
-  const query =
-    process.env.GMAIL_JOB_ALERT_QUERY ||
-    'in:inbox newer_than:30d (from:linkedin OR from:indeed OR from:totaljobs OR from:irishjobs OR subject:"job alert" OR subject:"jobs for you" OR subject:"recommended jobs" OR subject:vacancy OR subject:hiring)';
+  const query = process.env.GMAIL_JOB_ALERT_QUERY || buildDefaultGmailAlertQuery();
   const maxMessages = options?.maxMessages || 25;
   const alreadyProcessed = new Set(
     (await getProcessedGmailAlerts(userId)).map((item) => item.messageId)
@@ -246,24 +268,47 @@ export async function syncGmailJobAlerts(
 
   const messages = await gmailListMessages(token, query, maxMessages);
   const jobs: RawJobItem[] = [];
-  const processed: Array<{ messageId: string; threadId?: string; source: string }> = [];
+  const inspected: Array<{ messageId: string; threadId?: string; source: string }> = [];
+  let importedMessages = 0;
+  let failed = 0;
 
   for (const message of messages.filter((item) => !alreadyProcessed.has(item.id))) {
-    const full = await gmailGetMessage(token, message.id);
-    const text = extractTextFromGmailMessage(full);
-    const source = detectAlertSource(full, text);
-    const subject = getHeader(full, "subject");
-    const alertJobs = filterImportedGmailJobs(
-      parseJobAlertText(text, source, full.id, subject)
-    );
-    jobs.push(...alertJobs);
-    if (alertJobs.length > 0) {
-      processed.push({ messageId: full.id, threadId: full.threadId, source });
+    try {
+      const full = await gmailGetMessage(token, message.id);
+      const text = extractTextFromGmailMessage(full);
+      const source = detectAlertSource(full, text);
+      const subject = getHeader(full, "subject");
+      const aiJobs = await extractJobsFromAlertWithAI({
+        text,
+        source,
+        messageId: full.id,
+        subject,
+        from: getHeader(full, "from"),
+      });
+      const alertJobs = filterImportedGmailJobs(
+        aiJobs.length > 0 ? aiJobs : parseJobAlertText(text, source, full.id, subject)
+      );
+
+      jobs.push(...alertJobs);
+      inspected.push({ messageId: full.id, threadId: full.threadId, source });
+
+      if (alertJobs.length > 0) {
+        importedMessages += 1;
+      }
+    } catch (err) {
+      failed += 1;
+      console.error(`[gmail] Failed to inspect alert ${message.id}:`, err);
     }
   }
 
-  await markGmailAlertsProcessed(userId, processed);
-  return { jobs, processed: processed.length };
+  await markGmailAlertsProcessed(userId, inspected);
+  return {
+    jobs,
+    processed: inspected.length,
+    importedMessages,
+    skipped: Math.max(0, inspected.length - importedMessages),
+    failed,
+  };
 }
 
 export async function getGmailConnectionStatus(): Promise<{
@@ -339,6 +384,131 @@ export async function getGmailConnectionStatus(): Promise<{
   }
 }
 
+function buildDefaultGmailAlertQuery(): string {
+  return [
+    "in:inbox",
+    "newer_than:3d",
+    "(",
+    "from:linkedin",
+    "OR from:indeed",
+    "OR from:totaljobs",
+    "OR from:irishjobs",
+    "OR from:jobs.nhs.uk",
+    "OR from:nhsjobs",
+    'OR subject:"job alert"',
+    'OR subject:"jobs for you"',
+    'OR subject:"recommended jobs"',
+    'OR subject:"clinical trial"',
+    'OR subject:"clinical research"',
+    'OR subject:"study coordinator"',
+    'OR subject:"trial coordinator"',
+    'OR subject:"site activation"',
+    'OR subject:"study start-up"',
+    'OR "clinical trial assistant"',
+    'OR "clinical trial associate"',
+    'OR "clinical research assistant"',
+    'OR "clinical research coordinator"',
+    'OR "trial coordinator"',
+    'OR "study coordinator"',
+    'OR "clinical operations assistant"',
+    ")",
+  ].join(" ");
+}
+
+async function extractJobsFromAlertWithAI(input: {
+  text: string;
+  source: string;
+  messageId: string;
+  subject: string;
+  from: string;
+}): Promise<RawJobItem[]> {
+  const links = extractLinks(input.text);
+  const prompt = `Extract only real job opportunities from this email alert.
+
+PRIORITY TARGETS:
+- Clinical Trial Assistant
+- Clinical Trials Assistant
+- Clinical Trial Associate
+- Clinical Research Assistant
+- Clinical Research Coordinator
+- Trial Coordinator
+- Clinical Operations Assistant
+- Study Start-Up Assistant/Coordinator
+- Site Activation Assistant/Coordinator
+- Trial Administrator
+
+SECONDARY TARGETS:
+- QA Associate / Quality Systems Associate / Document Control Associate
+- Regulatory Affairs Assistant / Regulatory Operations Assistant
+- Medical Information Associate
+- Research Governance / Research Support
+
+EXCLUDE:
+- IT support, drivers, offshore/oil & gas, hospitality, aviation security, radiography, field sales, finance/advice compliance, generic unrelated operations
+
+Return JSON only in this shape:
+{
+  "jobs": [
+    {
+      "title": "job title",
+      "company": "company",
+      "location": "location",
+      "link": "best matching apply/job URL if present, else empty string",
+      "description": "one short sentence about the role"
+    }
+  ]
+}
+
+If there are no relevant jobs, return {"jobs":[]}.
+
+Source: ${input.source}
+From: ${input.from}
+Subject: ${input.subject}
+Links:
+${links.join("\n") || "None"}
+
+Email text:
+---
+${input.text.slice(0, 12000)}
+---`;
+
+  const result = await callAI<{ jobs: unknown[] }>({
+    taskType: "extract-job-list-from-scrape",
+    prompt,
+    rawInput: {
+      source: input.source,
+      from: input.from,
+      subject: input.subject,
+      textPreview: input.text.slice(0, 2000),
+      links,
+    },
+    temperature: 0.05,
+    maxTokens: 1_200,
+  });
+
+  if (!result.success || !result.data) {
+    return [];
+  }
+
+  const parsed = GmailExtractedJobsSchema.safeParse(result.data);
+  if (!parsed.success) {
+    return [];
+  }
+
+  const now = new Date().toISOString();
+  return parsed.data.jobs.map((job, index) => ({
+    source: `gmail-${input.source}`,
+    sourceJobId: `${input.messageId}-ai-${index}`,
+    company: job.company,
+    title: job.title,
+    location: job.location,
+    link: job.link || links[index] || links[0] || "",
+    description: `${job.description || ""}\n\n${input.text}`.trim().slice(0, 6000),
+    raw: { gmailMessageId: input.messageId, alertSource: input.source, aiExtracted: true },
+    fetchedAt: now,
+  }));
+}
+
 async function readGoogleApiError(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as GoogleApiErrorPayload;
@@ -390,6 +560,26 @@ export async function createGmailDraft(input: {
 
   const data = (await response.json()) as { id?: string };
   return { draftId: data.id || null };
+}
+
+export async function deleteGmailDraft(draftId: string): Promise<void> {
+  const token = await getAccessToken();
+  if (!token || !draftId) {
+    return;
+  }
+
+  const response = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/drafts/${encodeURIComponent(draftId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    }
+  );
+
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Gmail draft deletion failed: ${response.status}`);
+  }
 }
 
 export async function getGmailSentStyleSamples(
@@ -887,7 +1077,7 @@ function extractLinks(text: string): string[] {
     new Set(
       matches
         .map((url) => url.replace(/&amp;/g, "&").replace(/[),.]+$/, ""))
-        .filter((url) => /job|career|apply|indeed|linkedin|totaljobs|irishjobs/i.test(url))
+        .filter((url) => /job|career|apply|indeed|linkedin|totaljobs|irishjobs|jobs\.nhs/i.test(url))
     )
   ).slice(0, 20);
 }
@@ -900,6 +1090,7 @@ function detectAlertSource(message: GmailMessage, text: string): string {
   if (combined.includes("totaljobs")) return "totaljobs";
   if (combined.includes("linkedin")) return "linkedin";
   if (combined.includes("indeed")) return "indeed";
+  if (combined.includes("jobs.nhs") || combined.includes("nhs jobs")) return "nhsjobs";
   return "job-alert";
 }
 

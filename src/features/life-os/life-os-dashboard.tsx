@@ -10,10 +10,12 @@ import { LifeTimeline } from "./life-timeline";
 import { WeeklyReview as WeeklyReviewForm } from "./weekly-review";
 import { SmartTaskPrioritizer } from "./smart-task-prioritizer";
 import { LifeOSExport } from "./life-os-export";
+import { OpenCodeMonthReview } from "./opencode-month-review";
 
-type LifeOSTab = "weekly" | "balance" | "score" | "briefing" | "timeline" | "review" | "tasks" | "export";
+type LifeOSTab = "weekly" | "month" | "balance" | "score" | "briefing" | "timeline" | "review" | "tasks" | "export";
 const LIFE_OS_TABS: { id: LifeOSTab; label: string }[] = [
   { id: "weekly", label: "Weekly Review" },
+  { id: "month", label: "Month Review" },
   { id: "balance", label: "Balance Wheel" },
   { id: "score", label: "OS Score" },
   { id: "briefing", label: "Morning Brief" },
@@ -119,6 +121,7 @@ export function LifeOSDashboard() {
       </div>
 
       {activeTab === "balance" && <LifeBalanceWheel />}
+      {activeTab === "month" && <OpenCodeMonthReview />}
       {activeTab === "score" && <LifeOSScore />}
       {activeTab === "briefing" && <MorningBriefing />}
       {activeTab === "timeline" && <LifeTimeline />}

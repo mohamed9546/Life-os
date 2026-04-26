@@ -28,6 +28,9 @@ export interface RelevanceGateResult {
 
 const PRIMARY_TITLE_TERMS = [
   "clinical trial assistant",
+  "clinical trials assistant",
+  "clinical trial associate",
+  "clinical research assistant",
   "clinical research coordinator",
   "clinical operations assistant",
   "clinical operations coordinator",
@@ -121,6 +124,12 @@ const FINANCE_TERMS = [
   "tax assistant",
   "tax analyst",
   "accountant",
+  "financial advisory",
+  "wealth management",
+  "mortgage advisor",
+  "independent financial adviser",
+  "ifa",
+  "advice quality",
   "finance analyst",
   "payroll",
   "audit trainee",
@@ -159,7 +168,46 @@ const OTHER_HARD_NEGATIVES = [
   "caregiver",
   "carer",
   "nursing home",
+  "offshore",
+  "oil & gas",
+  "oil and gas",
+  "rig mover",
+  "jack up",
+  "jack-up",
+  "drilling",
+  "food & beverage",
+  "food and beverage",
+  "hospitality",
+  "aviation security",
+  "airport security",
+  "van driver",
+  "delivery driver",
+  "courier",
+  "it support",
+  "helpdesk",
+  "service desk",
+  "desktop support",
+  "radiographer",
+  "radiography",
+  "ct radiographer",
+  "sonographer",
+  "imaging department",
+  "composting",
+  "waste management",
+  "warehouse operative",
 ];
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildTermPattern(term: string): RegExp {
+  const normalized = term.trim().toLowerCase();
+  const escaped = escapeRegExp(normalized)
+    .replace(/\s+/g, "[\\s-]+")
+    .replace(/\\-/g, "[\\s-]*");
+  return new RegExp(`\\b${escaped}\\b`, "i");
+}
 
 export function evaluateRawJobRelevance(raw: RawJobItem): RelevanceGateResult {
   return evaluateTextRelevance([
@@ -202,17 +250,17 @@ function evaluateTextRelevance(text: string): RelevanceGateResult {
   const supportMatches = findMatches(normalized, SUPPORT_TERMS);
   const seniorMatches = findMatches(titleLine, SENIOR_TERMS);
 
-  if (/clinical trial|clinical research|clinical operations|study start|site activation|trial administrator|trial master file|\btmf\b|\betmf\b|\bcra\b/.test(normalized)) {
+  if (/\bclinical trials?\b|\bclinical research\b|\bclinical operations\b|\bstudy start(?:-|\s)?up\b|\bsite activation\b|\btrial administrator\b|\btrial master file\b|\btmf\b|\betmf\b|\bcra\b/.test(normalized)) {
     roleFamily = "clinical-operations";
-  } else if (/quality assurance|quality systems|document control|\bqms\b|\bgmp\b|gdocp/.test(normalized)) {
+  } else if (/\bquality assurance\b|\bquality systems\b|\bdocument control\b|\bqms\b|\bgmp\b|\bgdocp\b|\bcapa\b|\bdeviation\b/.test(normalized)) {
     roleFamily = "qa";
-  } else if (/regulatory|submissions|mhra|ema/.test(normalized)) {
+  } else if (/\bregulatory\b|\bsubmissions?\b|\bmhra\b|\bema\b/.test(normalized)) {
     roleFamily = "regulatory";
-  } else if (/pharmacovigilance|drug safety|adverse event|icsr|argus/.test(normalized)) {
+  } else if (/\bpharmacovigilance\b|\bdrug safety\b|\badverse event\b|\bicsr\b|\bargus\b/.test(normalized)) {
     roleFamily = "pv";
-  } else if (/medical information|medical affairs/.test(normalized)) {
+  } else if (/\bmedical information\b|\bmedical affairs\b/.test(normalized)) {
     roleFamily = "medinfo";
-  } else if (/research governance|research support/.test(normalized)) {
+  } else if (/\bresearch governance\b|\bresearch support\b/.test(normalized)) {
     roleFamily = "research-governance";
   }
 
@@ -286,6 +334,10 @@ function evaluateTextRelevance(text: string): RelevanceGateResult {
     reasons.push(`Entry/support seniority signal: ${supportMatches[0]}.`);
   }
 
+  if (roleFamily === "other" && positiveMatches.length === 0) {
+    reasons.push("Role lacks strong regulated-healthcare or clinical-trial signals.");
+  }
+
   const regulatedHealthcareRelevance =
     roleFamily === "other"
       ? positiveMatches.length >= 2
@@ -331,9 +383,9 @@ function evaluateTextRelevance(text: string): RelevanceGateResult {
 }
 
 function findMatches(text: string, terms: string[]) {
-  return terms.filter((term) => text.includes(term));
+  return terms.filter((term) => buildTermPattern(term).test(text));
 }
 
 function matchesAny(text: string, terms: string[]) {
-  return terms.some((term) => text.includes(term));
+  return terms.some((term) => buildTermPattern(term).test(text));
 }

@@ -159,6 +159,8 @@ export async function POST(request: NextRequest) {
       maxEnrich,
       skipEnrich,
       skipRank,
+      includeGmailAlerts: true,
+      gmailMaxMessages: 25,
     };
     const run = await createPipelineRun(user.id, options);
 

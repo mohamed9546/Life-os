@@ -27,7 +27,8 @@ export const SOURCE_CATALOG = [
   { id: "careerjet", label: "CareerJet", defaultEnabled: false },
   { id: "indeed", label: "Indeed", defaultEnabled: true },
   { id: "weworkremotely", label: "We Work Remotely", defaultEnabled: false },
-  { id: "guardianjobs", label: "Guardian Jobs", defaultEnabled: false },
+  { id: "guardianjobs", label: "Guardian Jobs", defaultEnabled: true },
+  { id: "nhsjobs", label: "NHS Jobs", defaultEnabled: true },
 ] as const;
 
 export const RELIABLE_SOURCE_IDS = SOURCE_CATALOG.filter(
@@ -77,74 +78,14 @@ export function createDefaultSavedSearches(userId: string): SavedSearch[] {
 
   return [
     {
-      id: `${userId}-qa-core`,
+      id: `${userId}-cta-core`,
       userId,
-      label: "QA / GMP core",
-      keywords: ["quality assurance", "GMP", "pharmaceutical"],
-      location: "Glasgow",
-      remoteOnly: false,
-      radius: 40,
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: `${userId}-qa-compliance`,
-      userId,
-      label: "Quality systems / compliance",
-      keywords: ["quality systems", "compliance", "document control"],
-      location: "United Kingdom",
-      remoteOnly: false,
-      radius: 0,
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: `${userId}-regulatory`,
-      userId,
-      label: "Regulatory affairs",
-      keywords: ["regulatory affairs", "regulatory operations"],
-      location: "United Kingdom",
-      remoteOnly: false,
-      radius: 0,
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: `${userId}-regulatory-device`,
-      userId,
-      label: "Regulatory devices",
-      keywords: ["medical device regulatory", "ISO 13485", "CE marking"],
-      location: "United Kingdom",
-      remoteOnly: true,
-      radius: 0,
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: `${userId}-medinfo`,
-      userId,
-      label: "Medical information",
-      keywords: ["medical information", "medical affairs", "scientific support"],
-      location: "United Kingdom",
-      remoteOnly: false,
-      radius: 0,
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: `${userId}-clinical`,
-      userId,
-      label: "CTA / trial support",
+      label: "CTA core",
       keywords: [
         "clinical trial assistant",
-        "trial coordinator",
-        "clinical operations assistant",
-        "study coordinator",
+        "clinical trials assistant",
+        "clinical trial associate",
+        "clinical research assistant",
       ],
       location: "United Kingdom",
       remoteOnly: false,
@@ -154,35 +95,34 @@ export function createDefaultSavedSearches(userId: string): SavedSearch[] {
       updatedAt: now,
     },
     {
-      id: `${userId}-cra-core`,
+      id: `${userId}-cta-coordination`,
       userId,
-      label: "CRA / site management",
+      label: "Clinical coordination",
       keywords: [
-        "clinical research associate",
-        "CRA I",
-        "site management",
-        "monitoring",
+        "clinical research coordinator",
+        "trial coordinator",
+        "clinical study assistant",
+        "clinical study coordinator",
       ],
       location: "United Kingdom",
-      remoteOnly: true,
+      remoteOnly: false,
       radius: 0,
       enabled: true,
       createdAt: now,
       updatedAt: now,
     },
     {
-      id: `${userId}-clinical-ops`,
+      id: `${userId}-cta-startup`,
       userId,
-      label: "Clinical operations / startup",
+      label: "Study start-up / site activation",
       keywords: [
-        "clinical operations",
-        "study start up",
-        "site activation",
-        "trial coordinator",
-        "clinical trial administrator",
+        "study start-up assistant",
+        "study start-up coordinator",
+        "site activation assistant",
+        "site activation coordinator",
       ],
       location: "United Kingdom",
-      remoteOnly: false,
+      remoteOnly: true,
       radius: 0,
       enabled: true,
       createdAt: now,
@@ -191,8 +131,13 @@ export function createDefaultSavedSearches(userId: string): SavedSearch[] {
     {
       id: `${userId}-clinical-glasgow-scotland`,
       userId,
-      label: "Glasgow / Scotland clinical support",
-      keywords: ["clinical trial assistant", "study coordinator", "trial administrator"],
+      label: "Glasgow / Scotland CTA support",
+      keywords: [
+        "clinical trial assistant",
+        "clinical trial associate",
+        "clinical research assistant",
+        "trial administrator",
+      ],
       location: "Scotland",
       remoteOnly: false,
       radius: 50,
@@ -203,11 +148,80 @@ export function createDefaultSavedSearches(userId: string): SavedSearch[] {
     {
       id: `${userId}-london-hybrid-clinical`,
       userId,
-      label: "London hybrid clinical operations",
-      keywords: ["clinical operations assistant", "site activation", "study start-up"],
+      label: "London hybrid CTA / clinical ops",
+      keywords: [
+        "clinical operations assistant",
+        "clinical trial assistant",
+        "study start-up coordinator",
+        "site activation coordinator",
+      ],
       location: "London",
       remoteOnly: false,
       radius: 35,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: `${userId}-qa-core`,
+      userId,
+      label: "QA / GMP support",
+      keywords: [
+        "quality assurance pharmaceutical",
+        "quality systems gmp",
+        "document control gmp",
+      ],
+      location: "United Kingdom",
+      remoteOnly: false,
+      radius: 0,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: `${userId}-regulatory`,
+      userId,
+      label: "Regulatory affairs support",
+      keywords: [
+        "regulatory affairs assistant",
+        "regulatory operations assistant",
+        "regulatory submissions coordinator",
+      ],
+      location: "United Kingdom",
+      remoteOnly: false,
+      radius: 0,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: `${userId}-medinfo`,
+      userId,
+      label: "Medical information",
+      keywords: [
+        "medical information associate",
+        "medical information officer",
+        "medical affairs support",
+      ],
+      location: "United Kingdom",
+      remoteOnly: false,
+      radius: 0,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: `${userId}-research-governance`,
+      userId,
+      label: "Research governance / support",
+      keywords: [
+        "research governance",
+        "research support officer",
+        "clinical trial administrator",
+      ],
+      location: "United Kingdom",
+      remoteOnly: false,
+      radius: 0,
       enabled: true,
       createdAt: now,
       updatedAt: now,
@@ -219,6 +233,22 @@ export function createDefaultSavedSearches(userId: string): SavedSearch[] {
       keywords: ["clinical trial assistant", "regulatory affairs assistant"],
       location: "Egypt",
       remoteOnly: false,
+      radius: 0,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: `${userId}-cra-core`,
+      userId,
+      label: "Junior CRA / site support",
+      keywords: [
+        "junior cra",
+        "in-house cra",
+        "clinical research associate trainee",
+      ],
+      location: "United Kingdom",
+      remoteOnly: true,
       radius: 0,
       enabled: true,
       createdAt: now,
@@ -249,8 +279,13 @@ export function searchesToQueries(searches: SavedSearch[]): JobSearchQuery[] {
   // dedupe to merge.
   return searches
     .filter((search) => search.enabled)
+    .sort((left, right) => highestSearchPhraseScore(right) - highestSearchPhraseScore(left))
     .flatMap((search) => {
-      const phrases = search.keywords.length > 0 ? search.keywords : [""];
+      const phrases = (search.keywords.length > 0 ? search.keywords : [""])
+        .map((phrase) => phrase.trim())
+        .filter((phrase) => phrase.length > 0)
+        .filter((phrase) => !isLowSignalSearchPhrase(phrase))
+        .sort((left, right) => scoreSearchPhrase(right) - scoreSearchPhrase(left));
       return phrases.map((phrase) => ({
         keywords: [phrase],
         location: search.location,
@@ -259,6 +294,63 @@ export function searchesToQueries(searches: SavedSearch[]): JobSearchQuery[] {
         maxResults: 25,
       }));
     });
+}
+
+function highestSearchPhraseScore(search: SavedSearch): number {
+  return Math.max(
+    0,
+    ...search.keywords
+      .map((phrase) => phrase.trim())
+      .filter((phrase) => !isLowSignalSearchPhrase(phrase))
+      .map(scoreSearchPhrase)
+  );
+}
+
+function isLowSignalSearchPhrase(phrase: string): boolean {
+  return new Set([
+    "gmp",
+    "pharmaceutical",
+    "compliance",
+    "monitoring",
+    "site management",
+  ]).has(phrase.trim().toLowerCase());
+}
+
+function scoreSearchPhrase(phrase: string): number {
+  const normalized = phrase.trim().toLowerCase();
+  if (
+    [
+      "clinical trial assistant",
+      "clinical trials assistant",
+      "clinical trial associate",
+      "clinical research assistant",
+      "clinical research coordinator",
+    ].includes(normalized)
+  ) {
+    return 100;
+  }
+
+  if (
+    [
+      "trial coordinator",
+      "clinical study assistant",
+      "clinical study coordinator",
+      "clinical operations assistant",
+      "clinical trial administrator",
+      "study start-up assistant",
+      "study start-up coordinator",
+      "site activation assistant",
+      "site activation coordinator",
+    ].includes(normalized)
+  ) {
+    return 80;
+  }
+
+  if (/regulatory|quality|medical information|research governance|cra/.test(normalized)) {
+    return 40;
+  }
+
+  return 20;
 }
 
 export function normalizeRemotePreference(value: string): CareerProfile["remotePreference"] {

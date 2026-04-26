@@ -33,6 +33,7 @@ import {
 import { buildCvPacket } from "./cv";
 import { draftColdOutreachForJob } from "./cold-outreach";
 import { createGmailApplicationDraft } from "./gmail";
+import { evaluateEnrichedJobRelevance } from "@/lib/jobs/pipeline/relevance";
 
 export interface AutoApplyOptions {
   maxApplications?: number;
@@ -332,6 +333,8 @@ function applicationSourcePriority(source: string): number {
   switch (source) {
     case "gmail-totaljobs":
       return 40;
+    case "gmail-nhsjobs":
+      return 38;
     case "gmail-irishjobs":
       return 36;
     case "gmail-linkedin":
@@ -342,6 +345,8 @@ function applicationSourcePriority(source: string): number {
       return 20;
     case "linkedin":
       return 12;
+    case "nhsjobs":
+      return 14;
     case "company-generic":
       return 10;
     default:
@@ -383,8 +388,17 @@ export function isEligibleForAutoApply(job: EnrichedJob): boolean {
   const fit = job.fit?.data;
   if (!fit) return false;
   if (!["high", "medium"].includes(fit.priorityBand)) return false;
+  if (fit.fitScore < 55) return false;
   if (fit.visaRisk === "red") return false;
   if (job.status === "applied" || job.status === "rejected" || job.status === "archived") {
+    return false;
+  }
+  const relevance = evaluateEnrichedJobRelevance(job);
+  if (
+    relevance.hardReject ||
+    ["weak", "irrelevant"].includes(relevance.regulatedHealthcareRelevance) ||
+    relevance.supportNature === "leadership"
+  ) {
     return false;
   }
   if (!job.raw.link) return false;

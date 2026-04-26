@@ -26,6 +26,7 @@ import {
 } from "@/lib/jobs/storage";
 import { dedupeJobsById } from "@/lib/jobs/selectors";
 import { generateDedupeKey } from "@/lib/jobs/sources/normalize";
+import { syncGmailJobAlerts } from "@/lib/applications/gmail";
 import {
   type PipelineBudgetProfile,
   resolvePipelineEnrichmentBudget,
@@ -74,6 +75,8 @@ export interface PipelineOptions {
   skipEnrich?: boolean;
   skipRank?: boolean;
   budgetProfile?: PipelineBudgetProfile;
+  includeGmailAlerts?: boolean;
+  gmailMaxMessages?: number;
 }
 
 const EXCLUDED_TITLE_PATTERN = /\b(manager|lead|director)\b/i;
@@ -225,6 +228,21 @@ async function fetchFromSources(
   opts: PipelineOptions
 ): Promise<{ allJobs: RawJobItem[]; fetchResults: FetchResult[] }> {
   let adapters = await getActiveAdapters();
+  const extraFetchResults: FetchResult[] = [];
+  const extraJobs: RawJobItem[] = [];
+
+  if (opts.includeGmailAlerts && opts.userId) {
+    const gmailResult = await syncGmailJobAlerts(opts.userId, {
+      maxMessages: opts.gmailMaxMessages || 25,
+    });
+    const gmailJobs = filterFetchedJobs(gmailResult.jobs);
+    extraJobs.push(...gmailJobs);
+    extraFetchResults.push({
+      source: "gmail-alerts",
+      jobsFetched: gmailJobs.length,
+      error: gmailResult.error,
+    });
+  }
 
   console.log(`[pipeline] Found ${adapters.length} active adapters globally.`);
 
@@ -234,7 +252,7 @@ async function fetchFromSources(
 
   if (adapters.length === 0) {
     console.log("[pipeline] No active adapters found after filtering");
-    return { allJobs: [], fetchResults: [] };
+    return { allJobs: extraJobs, fetchResults: extraFetchResults };
   }
 
   console.log(
@@ -285,8 +303,8 @@ async function fetchFromSources(
     })
   );
 
-  const allJobs = adapterResults.flatMap((r) => r.jobs);
-  const fetchResults = adapterResults.map((r) => r.fetchResult);
+  const allJobs = [...extraJobs, ...adapterResults.flatMap((r) => r.jobs)];
+  const fetchResults = [...extraFetchResults, ...adapterResults.map((r) => r.fetchResult)];
 
   return { allJobs, fetchResults };
 }

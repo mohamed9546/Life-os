@@ -19,7 +19,6 @@ import {
 import { parseJobPosting } from "@/lib/ai/tasks/parse-job";
 import { evaluateJobFit } from "@/lib/ai/tasks/evaluate-job";
 import { generateDedupeKey } from "@/lib/jobs/sources/normalize";
-import { checkAIRateLimit } from "@/lib/ai/rate-limiter";
 import { buildContactStrategy } from "@/lib/enrichment";
 import { evaluateRawJobRelevance } from "./relevance";
 
@@ -122,27 +121,16 @@ export async function enrichJobs(
     }
 
     const relevance = evaluateRawJobRelevance(raw);
-    if (relevance.hardReject) {
+    if (
+      relevance.hardReject ||
+      ["weak", "irrelevant"].includes(relevance.regulatedHealthcareRelevance) ||
+      relevance.supportNature === "leadership"
+    ) {
       skipped.push({
         raw,
         reason: `Pre-rank relevance gate: ${relevance.reasons.join(" ")}`
       });
       continue;
-    }
-
-    const rateCheck = await checkAIRateLimit("parse-job");
-    if (!rateCheck.allowed) {
-      skipped.push({ raw, reason: rateCheck.reason || "Rate limited" });
-      console.log(
-        `[enrich] Rate limited at job ${i + 1}/${batch.length}: ${rateCheck.reason}`
-      );
-      for (let j = i + 1; j < batch.length; j++) {
-        skipped.push({
-          raw: batch[j],
-          reason: "Batch halted due to rate limit",
-        });
-      }
-      break;
     }
 
     try {
@@ -252,6 +240,7 @@ async function enrichSingleJob(
 
   let parsed: AIResult<ParsedJobPosting> | null = null;
   const parseResult = await parseJobPosting(textToParse, {
+    title: raw.title,
     source: raw.source,
     company: raw.company,
     location: raw.location,

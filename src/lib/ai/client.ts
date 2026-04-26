@@ -20,6 +20,15 @@ import {
 import { checkAIRateLimit, getAIUsageStats, recordAICall } from "./rate-limiter";
 import { appendToCollection, Collections } from "@/lib/storage";
 
+function isUsageLimitReason(reason?: string): boolean {
+  return Boolean(
+    reason &&
+      (/Monthly AI budget reached/i.test(reason) ||
+        /Daily AI call limit reached/i.test(reason) ||
+        /Task type ".*" limit reached/i.test(reason))
+  );
+}
+
 type AIRuntimeCandidate = {
   target: "primary" | "secondary";
   provider: AIConfig["provider"];
@@ -583,7 +592,7 @@ export async function callAI<T = unknown>(
   const monthlyBudgetReached =
     !options.skipRateLimit &&
     (usage?.estimatedSpendGbp || 0) >= config.monthlyBudgetGbp;
-  const runtimeCandidates = buildRuntimeCandidates(config, taskConfig, monthlyBudgetReached);
+  let runtimeCandidates = buildRuntimeCandidates(config, taskConfig, monthlyBudgetReached);
 
   if (runtimeCandidates.length === 0) {
     return {
@@ -604,11 +613,11 @@ export async function callAI<T = unknown>(
       taskConfig.preferredRuntime === "primary"
     );
     if (!rateCheck.allowed) {
-      if (
-        rateCheck.reason?.includes("Monthly AI budget reached") &&
-        runtimeCandidates.some((candidate) => candidate.target === "secondary")
-      ) {
-        // Fall through to secondary runtime only.
+      const secondaryCandidates = runtimeCandidates.filter(
+        (candidate) => candidate.target === "secondary"
+      );
+      if (secondaryCandidates.length > 0 && isUsageLimitReason(rateCheck.reason)) {
+        runtimeCandidates = secondaryCandidates;
       } else {
         return {
           success: false,

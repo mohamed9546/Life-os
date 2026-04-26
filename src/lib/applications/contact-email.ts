@@ -1,7 +1,7 @@
 import { EnrichedJob } from "@/types";
 
 const JOB_BOARD_HOST_PATTERN =
-  /(linkedin|indeed|totaljobs|irishjobs|adzuna|reed|jooble|careerjet|serpapi|google|findwork|themuse|arbeitnow|remotive|himalayas|jobsac|guardianjobs)/i;
+  /(linkedin|indeed|totaljobs|irishjobs|adzuna|reed|jooble|careerjet|serpapi|google|findwork|themuse|arbeitnow|remotive|himalayas|jobsac|guardianjobs|jobs\.nhs|nhsjobs)/i;
 
 function preferredAliases(contactTitle?: string): string[] {
   const title = (contactTitle || "").toLowerCase();

@@ -9,6 +9,7 @@ Built with Next.js 14, TypeScript, Tailwind, a local Python FastAPI sidecar for 
 - **Career pipeline.** Pulls jobs from Adzuna, Reed, Jooble, Findwork, The Muse, Greenhouse, Lever, Remotive, Himalayas, SerpAPI, LinkedIn, Guardian, Careerjet, WeWorkRemotely, Arbeitnow, Indeed RSS, TotalJobs, and Jobs.ac.uk.
 - **AI analyst and routing.** Paste a job posting and get structured parse, fit score, and action recommendation. `parse-job` and `evaluate-job` can use Gemini directly or the Python sidecar in local mode; secondary tasks can fall back through OpenRouter.
 - **Application automation.** Gmail-backed recommendation pipeline, manual review logs, CV selection, retry/run endpoints, and Gmail-first recommendation prioritisation.
+- **OpenCode starter kit.** Local `data/opencode/` workflows for shutdown planning, next-action picking, application follow-up drafting, regulatory watch digests, paper capture, and CTA-first track triage.
 - **Contact enrichment fallback.** If live people-search APIs are unavailable, Career still shows suggested contact roles so decision-maker outreach never renders empty.
 - **Career tools.** Cover-letter generation, CV optimization, interview prep, salary lookup, skill-gap analysis, and candidate-profile extraction from imported CV text.
 - **Life OS surfaces.** Money, decisions, routines, goals, journal, weekly review, morning briefing, and worker status.
@@ -101,6 +102,14 @@ Key files:
 | `npm run dev` | Next.js dev server |
 | `npm run worker` | Continuous background worker; against a local dev server it now refuses by default unless you opt in |
 | `npm run worker:once` | Single worker pass |
+| `npm run opencode:shutdown` | Interactive shutdown ritual that writes tomorrow's top 3 into `data/opencode/` |
+| `npm run opencode:next` | Picks the next best action from tomorrow notes, tasks, and application state |
+| `npm run opencode:apps-status` | Rebuilds the local application-ops snapshot and markdown dashboard |
+| `npm run opencode:followup-check` | Generates first/second follow-up drafts from stale applications |
+| `npm run opencode:track-triage` | CTA-first job-track triage for a pasted JD or file |
+| `npm run opencode:ats-score` | Deterministic ATS-style keyword coverage score for JD and CV files |
+| `npm run opencode:paper-grab` | Pulls PubMed/Crossref metadata into a reusable paper note |
+| `npm run opencode:reg-watch` | Fetches MHRA/FDA bulletin feeds into a local digest |
 | `npm run lint` | ESLint check |
 | `npm run typecheck` | TypeScript check |
 | `npm run build` | Production build check |
@@ -111,4 +120,8 @@ For local development, prefer `npm run worker:once`. Continuous local worker mod
 
 `data/*.json` is the local source of truth. Back it up before destructive changes. Backups created by local migration work live under `backups/` and are intentionally ignored by git.
 
+`data/opencode/` is the local OpenCode working area for shutdown notes, follow-up drafts, paper notes, and regulatory digests.
+
 Cloud/provider secrets should stay env-only. Do not store Gemini, OpenRouter, or other provider keys in tracked files or `data/*.json`.
+
+If you want tracked sensitive exports, use encrypted `.age` files under `private/` and see [docs/opencode-privacy.md](docs/opencode-privacy.md).

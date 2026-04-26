@@ -650,6 +650,9 @@ export interface AppConfig {
     guardianjobs: {
       enabled: boolean;
     };
+    nhsjobs: {
+      enabled: boolean;
+    };
   };
   enrichment: {
     apollo: {

@@ -227,7 +227,7 @@ export function AIControlRoom() {
               updateConfig({ provider, mode: provider === "gemini" ? "cloud" : "local" });
             }}
           >
-            <option value="gemini">Gemini (Google AI)</option>
+            <option value="gemini">Gemini (direct paid API)</option>
             <option value="ollama">Ollama (local)</option>
           </select>
         </div>
@@ -368,7 +368,7 @@ export function AIControlRoom() {
           <div>
             <h3 className="text-sm font-medium text-text-primary">Secondary runtime</h3>
             <p className="text-xs text-text-secondary mt-1">
-              Free hosted fallback for non-critical tasks and Gemini budget overflow.
+              Optional OpenRouter fallback for non-critical tasks and Gemini budget overflow.
             </p>
           </div>
           <button
@@ -388,7 +388,7 @@ export function AIControlRoom() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="label">OpenRouter key source</label>
+            <label className="label">OpenRouter fallback key source</label>
             <div className="rounded-lg border border-surface-3 bg-surface-1 px-4 py-3 text-sm text-text-secondary">
               {config.hasSecondaryApiKey
                 ? "Using OPENROUTER_API_KEY from environment. The key is not stored in repo data."
@@ -537,8 +537,8 @@ export function AIControlRoom() {
                       })
                     }
                   >
-                    <option value="primary">Primary (Gemini)</option>
-                    <option value="secondary">Secondary (OpenRouter free)</option>
+                    <option value="primary">Primary (direct Gemini API)</option>
+                    <option value="secondary">Secondary (OpenRouter fallback)</option>
                   </select>
                 </div>
                 <div>

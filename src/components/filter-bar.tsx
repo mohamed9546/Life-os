@@ -5,6 +5,7 @@ import {
   getRoleTrackLabel,
 } from "@/lib/career/role-track-labels";
 import { getContactFreshness, hasOutreachDraft } from "@/lib/jobs/selectors";
+import { getSourceLabel } from "@/lib/jobs/source-meta";
 
 export interface JobFilters {
   query: string;
@@ -77,9 +78,12 @@ export function FilterBar({
         onChange={(e) => update({ source: e.target.value })}
       >
         <option value="all">All Sources</option>
-        {availableSources.map((s) => (
+        <option value="gmail">Gmail Alerts</option>
+        {[...availableSources].sort((left, right) =>
+          getSourceLabel(left).localeCompare(getSourceLabel(right))
+        ).map((s) => (
           <option key={s} value={s}>
-            {s}
+            {getSourceLabel(s)}
           </option>
         ))}
       </select>
@@ -100,7 +104,7 @@ export function FilterBar({
         value={filters.roleTrack}
         onChange={(e) => update({ roleTrack: e.target.value })}
       >
-        <option value="all">All Tracks</option>
+        <option value="all">All Career Paths</option>
         {(availableRoleTracks.length > 0
           ? availableRoleTracks
           : [...DEFAULT_VISIBLE_ROLE_TRACKS]
@@ -217,8 +221,11 @@ export function applyFilters(
         .toLowerCase();
       if (!haystack.includes(filters.query.trim().toLowerCase())) return false;
     }
-    if (filters.source !== "all" && job.raw.source !== filters.source)
+    if (filters.source === "gmail") {
+      if (!job.raw.source.startsWith("gmail-")) return false;
+    } else if (filters.source !== "all" && job.raw.source !== filters.source) {
       return false;
+    }
     if (filters.fetchedWindow !== "all") {
       const days = parseInt(filters.fetchedWindow.replace(/\D/g, ""), 10);
       const fetchedAt = new Date(job.raw.fetchedAt).getTime();

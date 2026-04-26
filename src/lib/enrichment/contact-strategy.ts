@@ -94,7 +94,7 @@ function inferCompanyDomain(raw: RawJobItem, companyIntel: CompanyIntel | null):
 
   try {
     const host = new URL(raw.link).hostname.replace(/^www\./, "").toLowerCase();
-    if (/(linkedin|indeed|totaljobs|irishjobs|adzuna|reed|jooble|careerjet|serpapi|google|findwork|themuse|arbeitnow|remotive|himalayas)/.test(host)) {
+    if (/(linkedin|indeed|totaljobs|irishjobs|adzuna|reed|jooble|careerjet|serpapi|google|findwork|themuse|arbeitnow|remotive|himalayas|jobs\.nhs|nhsjobs)/.test(host)) {
       return undefined;
     }
     return host;

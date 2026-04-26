@@ -37,6 +37,11 @@ export interface PipelineApiResult {
     paused: number;
     failed: number;
   };
+  fetchResults?: Array<{
+    source: string;
+    jobsFetched: number;
+    error?: string;
+  }>;
   error?: string;
 }
 
