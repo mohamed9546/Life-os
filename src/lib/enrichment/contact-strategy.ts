@@ -26,6 +26,19 @@ export interface ContactStrategyOptions {
   writingStyleSamples?: string[];
 }
 
+type ApolloRunGuardrailState = {
+  planRestricted: boolean;
+  warned: boolean;
+};
+
+function markApolloPlanRestricted(state: ApolloRunGuardrailState) {
+  state.planRestricted = true;
+  if (!state.warned) {
+    state.warned = true;
+    console.warn("[apollo] enrichment skipped: plan restricted");
+  }
+}
+
 function defaultEnrichmentConfig(): AppConfig["enrichment"] {
   return {
     apollo: { enabled: false, apiKey: "" },
@@ -52,13 +65,17 @@ async function loadEnrichmentConfig(): Promise<AppConfig["enrichment"]> {
 
 async function backfillEmails(
   people: DecisionMaker[],
-  companyDomain?: string
+  companyDomain?: string,
+  state?: ApolloRunGuardrailState
 ): Promise<DecisionMaker[]> {
-  if (!companyDomain) return people;
+  if (!companyDomain || state?.planRestricted) return people;
 
   const updated: DecisionMaker[] = [];
 
-  for (const person of people.slice(0, 5)) {
+  const candidates = people.slice(0, 5);
+
+  for (let index = 0; index < candidates.length; index++) {
+    const person = candidates[index];
     if (person.email) {
       updated.push(person);
       continue;
@@ -75,7 +92,14 @@ async function backfillEmails(
         emailConfidence: result.data.confidence ?? person.emailConfidence,
       });
     } else {
-      if (result.status !== "not_found" && result.status !== "plan_restricted") {
+      if (result.status === "plan_restricted") {
+        if (state) {
+          markApolloPlanRestricted(state);
+        }
+        updated.push(person, ...candidates.slice(index + 1));
+        break;
+      }
+      if (result.status !== "not_found") {
         console.warn(`[contact-strategy] email lookup ${result.status} for ${person.fullName}`);
       }
       updated.push(person);
@@ -164,6 +188,10 @@ export async function buildContactStrategy(
   const config = await loadEnrichmentConfig();
   const opts = options ?? {};
   const apolloAvailable = config.apollo.enabled && Boolean(config.apollo.apiKey);
+  const apolloGuardrails: ApolloRunGuardrailState = {
+    planRestricted: false,
+    warned: false,
+  };
 
   const allowPeopleSearch =
     opts.ignoreThresholds || fit.fitScore >= config.minFitScoreForPeopleSearch;
@@ -181,6 +209,8 @@ export async function buildContactStrategy(
     );
     if (result.status === "ok") {
       companyIntel = result.data;
+    } else if (result.status === "plan_restricted") {
+      markApolloPlanRestricted(apolloGuardrails);
     } else if (result.status !== "not_found" && result.status !== "not_configured") {
       console.warn(`[contact-strategy] company enrichment: ${result.status}`);
     }
@@ -189,6 +219,7 @@ export async function buildContactStrategy(
   // ---- Decision maker search ----
   if (
     apolloAvailable &&
+    !apolloGuardrails.planRestricted &&
     (config.autoFindDecisionMakers || opts.forceDecisionMakers) &&
     allowPeopleSearch
   ) {
@@ -203,6 +234,8 @@ export async function buildContactStrategy(
     );
     if (result.status === "ok") {
       decisionMakers = result.data;
+    } else if (result.status === "plan_restricted") {
+      markApolloPlanRestricted(apolloGuardrails);
     } else if (result.status !== "not_found" && result.status !== "not_configured") {
       console.warn(`[contact-strategy] people search: ${result.status}`);
     }
@@ -211,9 +244,10 @@ export async function buildContactStrategy(
     if (
       decisionMakers.length > 0 &&
       (config.autoFindEmails || opts.forceEmails) &&
-      companyIntel?.domain
+      companyIntel?.domain &&
+      !apolloGuardrails.planRestricted
     ) {
-      decisionMakers = await backfillEmails(decisionMakers, companyIntel.domain);
+      decisionMakers = await backfillEmails(decisionMakers, companyIntel.domain, apolloGuardrails);
     }
   }
 

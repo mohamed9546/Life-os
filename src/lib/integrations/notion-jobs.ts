@@ -32,6 +32,55 @@ export interface NotionSyncResult {
   errors: string[];
 }
 
+type NotionSyncErrorCode =
+  | "notion_not_configured"
+  | "notion_misconfigured"
+  | "notion_runtime_error";
+
+class NotionSyncError extends Error {
+  code: NotionSyncErrorCode;
+  status?: number;
+
+  constructor(code: NotionSyncErrorCode, message: string, status?: number) {
+    super(message);
+    this.name = "NotionSyncError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function classifyNotionSyncError(err: unknown): NotionSyncErrorCode {
+  if (err instanceof NotionSyncError) {
+    return err.code;
+  }
+
+  const message = err instanceof Error ? err.message : String(err);
+  if (/notion is not configured/i.test(message)) {
+    return "notion_not_configured";
+  }
+  if (/database lookup failed: (403|404)/i.test(message)) {
+    return "notion_misconfigured";
+  }
+  return "notion_runtime_error";
+}
+
+function summarizeNotionSyncWarning(err: unknown, scope: "job" | "full"): string | null {
+  const classification = classifyNotionSyncError(err);
+  if (classification === "notion_not_configured") {
+    return null;
+  }
+
+  if (classification === "notion_misconfigured") {
+    return scope === "full"
+      ? "[notion] full job sync skipped: database not found or integration not shared"
+      : "[notion] job sync skipped: database not found or integration not shared";
+  }
+
+  return scope === "full"
+    ? "[notion] full job sync skipped: integration error"
+    : "[notion] job sync skipped: integration error";
+}
+
 function getNotionConfig() {
   const token =
     process.env.NOTION_API_KEY?.trim() ||
@@ -56,7 +105,7 @@ function normalizePropertyName(input: string): string {
 async function notionFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const config = getNotionConfig();
   if (!config.configured) {
-    throw new Error("Notion is not configured.");
+    throw new NotionSyncError("notion_not_configured", "Notion is not configured.");
   }
 
   return fetch(`${NOTION_API_BASE}${path}`, {
@@ -75,7 +124,18 @@ async function getDatabase(): Promise<NotionDatabase> {
   const config = getNotionConfig();
   const response = await notionFetch(`/databases/${config.databaseId}`);
   if (!response.ok) {
-    throw new Error(`Notion database lookup failed: ${response.status}`);
+    if (response.status === 403 || response.status === 404) {
+      throw new NotionSyncError(
+        "notion_misconfigured",
+        `Notion database lookup failed: ${response.status}`,
+        response.status
+      );
+    }
+    throw new NotionSyncError(
+      "notion_runtime_error",
+      `Notion database lookup failed: ${response.status}`,
+      response.status
+    );
   }
   return (await response.json()) as NotionDatabase;
 }
@@ -302,7 +362,10 @@ export async function syncJobsToNotionBestEffort(userId: string, jobs: EnrichedJ
   try {
     return await syncJobsToNotion(userId, jobs);
   } catch (err) {
-    console.warn("[notion] job sync failed:", err);
+    const warning = summarizeNotionSyncWarning(err, "job");
+    if (warning) {
+      console.warn(warning);
+    }
     return null;
   }
 }
@@ -311,7 +374,10 @@ export async function syncAllJobsToNotionBestEffort(userId: string) {
   try {
     return await syncAllJobsToNotion(userId);
   } catch (err) {
-    console.warn("[notion] full job sync failed:", err);
+    const warning = summarizeNotionSyncWarning(err, "full");
+    if (warning) {
+      console.warn(warning);
+    }
     return null;
   }
 }

@@ -63,6 +63,9 @@ vi.mock("@/lib/storage", () => ({
 vi.mock("./telemetry", () => ({
   recordAiTelemetryEvent: vi.fn().mockRejectedValue(new Error("telemetry write failed")),
   classifyTelemetryErrorType: vi.fn().mockImplementation(({ failureKind, errorSummary }) => failureKind || errorSummary || null),
+  summarizeAiRuntimeErrorForLogs: vi.fn().mockImplementation(({ failureKind, errorSummary }) =>
+    failureKind === "rate_limited" ? "rate limit exceeded" : errorSummary || "runtime error"
+  ),
 }));
 
 import { recordAiTelemetryEvent } from "./telemetry";

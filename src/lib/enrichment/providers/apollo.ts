@@ -65,7 +65,6 @@ async function apolloPost(
 
   const budgetCheck = budget.canCall(endpoint);
   if (!budgetCheck.allowed) {
-    console.warn(`[apollo] ${endpoint}: budget blocked — ${budgetCheck.reason}`);
     return { status: "plan_restricted", endpoint };
   }
 
@@ -87,7 +86,6 @@ async function apolloPost(
       if (response.status === 403) {
         const errBody = await response.json().catch(() => ({})) as { error_code?: string };
         if (errBody.error_code === "API_INACCESSIBLE") {
-          console.warn(`[apollo] ${endpoint}: not available on free plan`);
           return { status: "plan_restricted", endpoint };
         }
         return { status: "auth_failed" };
@@ -95,8 +93,7 @@ async function apolloPost(
       if (response.status === 401) {
         return { status: "auth_failed" };
       }
-      const text = await response.text().catch(() => "");
-      console.warn(`[apollo] ${endpoint} HTTP ${response.status}: ${text.slice(0, 120)}`);
+      console.warn(`[apollo] ${endpoint} HTTP ${response.status}`);
       return { status: "network_error", error: `HTTP ${response.status}` };
     }
 
