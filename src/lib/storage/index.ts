@@ -339,4 +339,5 @@ export const ConfigFiles = {
   AI_USAGE: "ai-usage",
   AI_CONFIG: "ai-config",
   SOURCE_HEALTH: "source-health",
+  APPLICATION_OUTCOMES: "application-outcomes",
 } as const;

@@ -408,6 +408,97 @@ export interface ApplicationLog extends Timestamped {
   attemptedAt: Timestamp;
 }
 
+export type ApplicationOutcomeRecordKind = "application_attempt" | "pipeline_job";
+
+export interface ApplicationOutcomeRecord {
+  recordId: string;
+  recordKind: ApplicationOutcomeRecordKind;
+  applicationAttemptId: string | null;
+  jobId: string | null;
+  dedupeKey: string;
+  source: string;
+  company: string;
+  roleTitle: string;
+  roleTrack: string | null;
+  cvVersion: string;
+  pipelineStatus: UserJobStatus | null;
+  latestAttemptStatus: ApplicationAttemptStatus | null;
+  currentStatus: string;
+  applicationDate: Timestamp | null;
+  latestStatusDate: Timestamp | null;
+  responseReceived: boolean;
+  responseDate: Timestamp | null;
+  interviewReceived: boolean;
+  rejectionReceived: boolean;
+  offerReceived: boolean;
+  ghosted: boolean;
+  daysSinceApplication: number | null;
+  daysToResponse: number | null;
+  followUpDue: boolean;
+  followUpStage: "first" | "second" | null;
+  recruiterName: string | null;
+  agencyName: string | null;
+  location: string | null;
+  remoteType: string | null;
+  salaryText: string | null;
+  fitScore: number | null;
+  matchScore: number | null;
+  notes: string | null;
+}
+
+export interface ApplicationOutcomeSummaryEntry {
+  key: string;
+  label: string;
+  totalRecords: number;
+  attemptRecords: number;
+  pipelineOnlyRecords: number;
+  usefulRoles: number;
+  appliedAttempts: number;
+  responded: number;
+  interviews: number;
+  rejections: number;
+  offers: number;
+  ghosted: number;
+  followUpDue: number;
+  responseRate: number | null;
+  interviewRate: number | null;
+  offerRate: number | null;
+}
+
+export interface ApplicationOutcomeStageLeakageEntry {
+  key: string;
+  label: string;
+  totalRecords: number;
+  attemptRecords: number;
+  pipelineOnlyRecords: number;
+  responded: number;
+  ghosted: number;
+  followUpDue: number;
+}
+
+export interface ApplicationOutcomeSnapshot {
+  userId: string;
+  generatedAt: Timestamp;
+  etlVersion: number;
+  thresholds: {
+    firstFollowUpDays: number;
+    secondFollowUpDays: number;
+    ghostedDays: number;
+  };
+  records: ApplicationOutcomeRecord[];
+  summaries: {
+    overall: ApplicationOutcomeSummaryEntry;
+    byTrack: ApplicationOutcomeSummaryEntry[];
+    bySource: ApplicationOutcomeSummaryEntry[];
+    byCvVersion: ApplicationOutcomeSummaryEntry[];
+    byCompany: ApplicationOutcomeSummaryEntry[];
+    byRecruiter: ApplicationOutcomeSummaryEntry[];
+    stageLeakage: ApplicationOutcomeStageLeakageEntry[];
+    followUpDue: ApplicationOutcomeRecord[];
+    ghosted: ApplicationOutcomeRecord[];
+  };
+}
+
 export interface AutoApplyPipelineResult {
   fetched: number;
   imported: number;

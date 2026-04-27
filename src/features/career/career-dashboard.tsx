@@ -41,6 +41,7 @@ import {
 } from "@/lib/career/shortlist-lanes";
 import { getSourceBadgeClassName, getSourceLabel } from "@/lib/jobs/source-meta";
 import { cn } from "@/lib/utils";
+import { ApplicationOutcomesPanel } from "./application-outcomes-panel";
 import { OpenCodeAppsStatusPanel } from "./open-code-apps-status";
 
 // ---- Types ----
@@ -231,6 +232,8 @@ export function CareerDashboard() {
         onRefresh={() => void refreshApplicationLogs()}
         onJobsRefresh={() => void jobs.refresh()}
       />
+
+      <ApplicationOutcomesPanel />
 
       <OpenCodeAppsStatusPanel />
 
