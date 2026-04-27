@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatus } from "@/types";
 import { OpenCodeControlPanel } from "./opencode-control-panel";
+import { SystemCheckpointPanel } from "./system-checkpoint-panel";
 
 interface OpsResponse {
   aiHealth: {
@@ -213,18 +214,24 @@ export function AutomationDashboard() {
 
   if (loading) {
     return (
-      <div className="card text-center py-12">
-        <StatusBadge status="running" label="Loading operations..." />
+      <div className="space-y-6">
+        <SystemCheckpointPanel />
+        <div className="card text-center py-12">
+          <StatusBadge status="running" label="Loading operations..." />
+        </div>
       </div>
     );
   }
 
   if (!ops) {
     return (
-      <div className="card text-center py-12">
-        <p className="text-sm text-text-secondary">
-          Admin operations are unavailable.
-        </p>
+      <div className="space-y-6">
+        <SystemCheckpointPanel />
+        <div className="card text-center py-12">
+          <p className="text-sm text-text-secondary">
+            Admin operations are unavailable.
+          </p>
+        </div>
       </div>
     );
   }
@@ -234,6 +241,8 @@ export function AutomationDashboard() {
 
   return (
     <div className="space-y-6">
+      <SystemCheckpointPanel />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <StatCard title="Local AI runtime">
           <MetricRow label="Endpoint" value={ops.aiHealth.endpoint} mono />

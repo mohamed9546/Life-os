@@ -499,6 +499,77 @@ export interface ApplicationOutcomeSnapshot {
   };
 }
 
+export type SystemCheckpointStatus = "healthy" | "attention" | "critical" | "unknown";
+
+export interface SystemCheckpointSection<T = Record<string, unknown>> {
+  status: SystemCheckpointStatus;
+  label: string;
+  summary: string;
+  updatedAt: string | null;
+  data: T;
+  actions?: Array<{
+    label: string;
+    href: string;
+  }>;
+}
+
+export interface SystemCheckpointSnapshot {
+  generatedAt: string;
+  overallStatus: SystemCheckpointStatus;
+  operatorChecklist: string[];
+  sourceHealth: SystemCheckpointSection<{
+    totalSources: number;
+    ok: number;
+    degraded: number;
+    down: number;
+    unknown: number;
+    worstFailingSources: Array<{
+      sourceId: string;
+      sourceName: string;
+      status: SourceHealthStatus;
+    }>;
+  }>;
+  aiTelemetry: SystemCheckpointSection<{
+    totalCalls: number;
+    todayCalls: number;
+    weekCalls: number;
+    monthCalls: number;
+    failureCount: number;
+    fallbackCount: number;
+    averageLatencyMs: number;
+    estimatedTotalCost: number;
+    recentFailures: number;
+    localCalls: number;
+    cloudCalls: number;
+    unknownCalls: number;
+  }>;
+  encryptedBackup: SystemCheckpointSection<{
+    latestBackupName: string | null;
+    latestBackupModifiedAt: string | null;
+    latestBackupSizeBytes: number | null;
+    backupAgeDays: number | null;
+    backupCount: number;
+  }>;
+  runtimeGuardrails: SystemCheckpointSection<{
+    privateBoundaryConfigured: boolean;
+    hookInstallerPresent: boolean;
+    preCommitHookPresent: boolean;
+    repoSafetyDocPresent: boolean;
+  }>;
+  applicationOutcomes: SystemCheckpointSection<{
+    totalRecords: number;
+    totalAttempts: number;
+    responses: number;
+    interviews: number;
+    offers: number;
+    ghosted: number;
+    followUpsDue: number;
+    bestSource: string | null;
+    bestTrack: string | null;
+    bestCvVersion: string | null;
+  }>;
+}
+
 export interface AutoApplyPipelineResult {
   fetched: number;
   imported: number;
