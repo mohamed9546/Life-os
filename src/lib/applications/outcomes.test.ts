@@ -26,6 +26,7 @@ import {
   buildApplicationOutcomeSnapshot,
   getLatestApplicationOutcomeSnapshot,
   saveApplicationOutcomeSnapshot,
+  summariseApplicationOutcomes,
 } from "./outcomes";
 import { readObject, writeObject } from "@/lib/storage";
 
@@ -145,6 +146,45 @@ function createJob(input: Partial<any>) {
     stageChangedAt: iso(4),
     createdAt: iso(6),
     updatedAt: iso(4),
+    ...input,
+  };
+}
+
+function createOutcomeRecord(input: Partial<any>) {
+  return {
+    recordId: "record-default",
+    recordKind: "application_attempt",
+    applicationAttemptId: "attempt-default",
+    jobId: "job-default",
+    dedupeKey: "dedupe-default",
+    source: "adzuna",
+    company: "Acme",
+    roleTitle: "Clinical Trial Assistant",
+    roleTrack: "clinical",
+    cvVersion: "CTA Master",
+    pipelineStatus: null,
+    latestAttemptStatus: "drafted",
+    currentStatus: "drafted",
+    applicationDate: iso(5),
+    latestStatusDate: iso(5),
+    responseReceived: false,
+    responseDate: null,
+    interviewReceived: false,
+    rejectionReceived: false,
+    offerReceived: false,
+    ghosted: false,
+    daysSinceApplication: 5,
+    daysToResponse: null,
+    followUpDue: false,
+    followUpStage: null,
+    recruiterName: null,
+    agencyName: null,
+    location: "Glasgow",
+    remoteType: "hybrid",
+    salaryText: "35000",
+    fitScore: 80,
+    matchScore: null,
+    notes: null,
     ...input,
   };
 }
@@ -343,5 +383,127 @@ describe("application outcome ETL", () => {
 
     vi.mocked(readObject).mockResolvedValueOnce({ version: 1, snapshotsByUserId: { "user-1": snapshot } } as any);
     await expect(getLatestApplicationOutcomeSnapshot("user-1")).resolves.toEqual(snapshot);
+  });
+
+  it("counts useful roles only for meaningful progression across summaries", () => {
+    const records = [
+      createOutcomeRecord({
+        recordId: "attempt-inbox",
+        source: "adzuna",
+        company: "Acme",
+        roleTrack: "clinical",
+        currentStatus: "inbox",
+        latestAttemptStatus: "drafted",
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-drafted",
+        source: "adzuna",
+        company: "Acme",
+        roleTrack: "clinical",
+        currentStatus: "drafted",
+        latestAttemptStatus: "drafted",
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-planned",
+        source: "adzuna",
+        company: "Acme",
+        roleTrack: "clinical",
+        currentStatus: "planned",
+        latestAttemptStatus: "planned",
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-applied",
+        source: "adzuna",
+        company: "Acme",
+        roleTrack: "clinical",
+        currentStatus: "applied",
+        latestAttemptStatus: "applied",
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-interview",
+        source: "reed",
+        company: "Beta",
+        roleTrack: "qa",
+        cvVersion: "QA Focus",
+        currentStatus: "interview",
+        latestAttemptStatus: "applied",
+        responseReceived: true,
+        interviewReceived: true,
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-offer",
+        source: "reed",
+        company: "Beta",
+        roleTrack: "qa",
+        cvVersion: "QA Focus",
+        currentStatus: "offer",
+        latestAttemptStatus: "applied",
+        responseReceived: true,
+        offerReceived: true,
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-rejected",
+        source: "reed",
+        company: "Beta",
+        roleTrack: "qa",
+        cvVersion: "QA Focus",
+        currentStatus: "rejected",
+        latestAttemptStatus: "applied",
+        responseReceived: true,
+        rejectionReceived: true,
+      }),
+      createOutcomeRecord({
+        recordId: "pipeline-shortlisted",
+        recordKind: "pipeline_job",
+        applicationAttemptId: null,
+        source: "adzuna",
+        company: "Acme",
+        roleTrack: "clinical",
+        cvVersion: "unknown",
+        currentStatus: "shortlisted",
+        latestAttemptStatus: null,
+        applicationDate: null,
+      }),
+      createOutcomeRecord({
+        recordId: "pipeline-tracked",
+        recordKind: "pipeline_job",
+        applicationAttemptId: null,
+        source: "linkedin",
+        company: "Gamma",
+        roleTrack: "regulatory",
+        cvVersion: "unknown",
+        currentStatus: "tracked",
+        latestAttemptStatus: null,
+        applicationDate: null,
+      }),
+      createOutcomeRecord({
+        recordId: "pipeline-inbox",
+        recordKind: "pipeline_job",
+        applicationAttemptId: null,
+        source: "adzuna",
+        company: "Acme",
+        roleTrack: "clinical",
+        cvVersion: "unknown",
+        currentStatus: "inbox",
+        latestAttemptStatus: null,
+        applicationDate: null,
+      }),
+    ];
+
+    const summaries = summariseApplicationOutcomes(records as any);
+
+    expect(summaries.overall.usefulRoles).toBe(6);
+
+    const adzunaSource = summaries.bySource.find((entry) => entry.key === "adzuna");
+    expect(adzunaSource?.usefulRoles).toBe(2);
+
+    const clinicalTrack = summaries.byTrack.find((entry) => entry.key === "clinical");
+    expect(clinicalTrack?.usefulRoles).toBe(2);
+
+    const acmeCompany = summaries.byCompany.find((entry) => entry.key === "Acme");
+    expect(acmeCompany?.usefulRoles).toBe(2);
+
+    const qaCv = summaries.byCvVersion.find((entry) => entry.key === "QA Focus");
+    expect(qaCv?.usefulRoles).toBe(3);
   });
 });

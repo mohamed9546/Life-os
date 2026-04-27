@@ -191,8 +191,19 @@ function isAppliedAttemptRecord(record: ApplicationOutcomeRecord): boolean {
   );
 }
 
-function isUsefulRole(record: ApplicationOutcomeRecord): boolean {
-  return record.recordKind === "application_attempt" || USEFUL_ROLE_STATUSES.has(record.currentStatus);
+function isUsefulOutcomeRecord(record: ApplicationOutcomeRecord): boolean {
+  if (USEFUL_ROLE_STATUSES.has(record.currentStatus)) {
+    return true;
+  }
+
+  if (record.currentStatus !== "rejected") {
+    return false;
+  }
+
+  return (
+    record.recordKind === "application_attempt" &&
+    Boolean(record.applicationAttemptId || record.applicationDate || record.responseReceived)
+  );
 }
 
 function deriveStageLeakageKey(record: ApplicationOutcomeRecord): { key: string; label: string } {
@@ -294,7 +305,7 @@ function summarizeDimension(
     } else {
       bucket.pipelineOnlyRecords += 1;
     }
-    if (isUsefulRole(record)) {
+    if (isUsefulOutcomeRecord(record)) {
       bucket.usefulRoles += 1;
     }
     if (isAppliedAttemptRecord(record)) {
@@ -335,7 +346,7 @@ function summarizeOverall(records: ApplicationOutcomeRecord[]): ApplicationOutco
     } else {
       bucket.pipelineOnlyRecords += 1;
     }
-    if (isUsefulRole(record)) {
+    if (isUsefulOutcomeRecord(record)) {
       bucket.usefulRoles += 1;
     }
     if (isAppliedAttemptRecord(record)) {
