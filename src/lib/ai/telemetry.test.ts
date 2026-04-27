@@ -21,6 +21,7 @@ import {
   getAiTelemetrySummary,
   recordAiTelemetryEvent,
   sanitizeTelemetryErrorSummary,
+  summarizeAiRuntimeErrorForLogs,
 } from "./telemetry";
 
 describe("ai telemetry domain", () => {
@@ -91,6 +92,16 @@ describe("ai telemetry domain", () => {
     });
 
     expect(summary).toBe("Rate limit exceeded for AI provider route.");
+  });
+
+  it("builds a concise console-safe runtime summary", () => {
+    const summary = summarizeAiRuntimeErrorForLogs({
+      failureKind: "rate_limited",
+      errorSummary:
+        'AI runtime returned 429: {"error":{"message":"Rate limit exceeded: free-models-per-day","code":429}}',
+    });
+
+    expect(summary).toBe("rate limit exceeded");
   });
 
   it("truncates long safe local errors", () => {
