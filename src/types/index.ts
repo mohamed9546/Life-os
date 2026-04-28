@@ -476,6 +476,56 @@ export interface ApplicationOutcomeStageLeakageEntry {
   followUpDue: number;
 }
 
+export type CvVersionPerformanceScope = "global" | "track" | "source";
+export type CvVersionConfidenceLevel =
+  | "insufficient_sample"
+  | "directional"
+  | "stronger_signal";
+
+export interface CvVersionPerformanceEntry {
+  cvVersion: string;
+  scope: CvVersionPerformanceScope;
+  scopeValue: string;
+  scopeLabel: string;
+  attemptCount: number;
+  responseCount: number;
+  responseRate: number | null;
+  interviewCount: number;
+  interviewRate: number | null;
+  rejectionCount: number;
+  offerCount: number;
+  ghostedCount: number;
+  followUpDueCount: number;
+  averageDaysToResponse: number | null;
+  lastUsedAt: string | null;
+  confidenceLevel: CvVersionConfidenceLevel;
+  sampleSizeWarning: string | null;
+  recommendation: string | null;
+}
+
+export interface CvVersionRecommendation {
+  scope: CvVersionPerformanceScope;
+  scopeValue: string;
+  scopeLabel: string;
+  cvVersion: string;
+  attemptCount: number;
+  responseCount: number;
+  responseRate: number | null;
+  confidenceLevel: CvVersionConfidenceLevel;
+  rationale: string;
+}
+
+export interface CvVersionPerformanceSummary {
+  byVersion: CvVersionPerformanceEntry[];
+  byTrack: CvVersionPerformanceEntry[];
+  bySource: CvVersionPerformanceEntry[];
+  recommendations: {
+    global: CvVersionRecommendation | null;
+    byTrack: CvVersionRecommendation[];
+    bySource: CvVersionRecommendation[];
+  };
+}
+
 export interface ApplicationOutcomeSnapshot {
   userId: string;
   generatedAt: Timestamp;
@@ -496,6 +546,7 @@ export interface ApplicationOutcomeSnapshot {
     stageLeakage: ApplicationOutcomeStageLeakageEntry[];
     followUpDue: ApplicationOutcomeRecord[];
     ghosted: ApplicationOutcomeRecord[];
+    cvPerformance: CvVersionPerformanceSummary;
   };
 }
 

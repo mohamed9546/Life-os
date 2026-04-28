@@ -11,6 +11,10 @@ import { ConfigFiles, readObject, writeObject } from "@/lib/storage";
 import { getApplicationLogs, getCvLibrary } from "./storage";
 import {
   ApplicationLog,
+  CvVersionConfidenceLevel,
+  CvVersionPerformanceEntry,
+  CvVersionPerformanceScope,
+  CvVersionRecommendation,
   ApplicationOutcomeRecord,
   ApplicationOutcomeSnapshot,
   ApplicationOutcomeStageLeakageEntry,
@@ -24,6 +28,9 @@ export const FIRST_FOLLOW_UP_DAYS = 8;
 export const SECOND_FOLLOW_UP_DAYS = 18;
 export const GHOSTED_DAYS = 21;
 export const APPLICATION_OUTCOMES_STORAGE_KEY = ConfigFiles.APPLICATION_OUTCOMES;
+export const CV_CONFIDENCE_DIRECTIONAL_MIN_ATTEMPTS = 3;
+export const CV_CONFIDENCE_STRONGER_SIGNAL_MIN_ATTEMPTS = 6;
+export const CV_RECOMMENDATION_MIN_RESPONSE_RATE_LEAD = 10;
 
 type StoredApplicationOutcomeSnapshots = {
   version: number;
@@ -56,6 +63,22 @@ interface SummaryBucket {
 }
 
 type SummarySelector = (record: ApplicationOutcomeRecord) => { key: string; label: string } | null;
+
+interface CvPerformanceAccumulator {
+  cvVersion: string;
+  scope: CvVersionPerformanceScope;
+  scopeValue: string;
+  scopeLabel: string;
+  attemptCount: number;
+  responseCount: number;
+  interviewCount: number;
+  rejectionCount: number;
+  offerCount: number;
+  ghostedCount: number;
+  followUpDueCount: number;
+  responseDays: number[];
+  lastUsedAt: string | null;
+}
 
 function normalizePath(value?: string | null): string | null {
   if (!value) return null;
@@ -279,6 +302,254 @@ function sortSummaryEntries(entries: ApplicationOutcomeSummaryEntry[]) {
     }
     return left.label.localeCompare(right.label);
   });
+}
+
+function classifyCvConfidenceLevel(attemptCount: number): CvVersionConfidenceLevel {
+  if (attemptCount >= CV_CONFIDENCE_STRONGER_SIGNAL_MIN_ATTEMPTS) {
+    return "stronger_signal";
+  }
+  if (attemptCount >= CV_CONFIDENCE_DIRECTIONAL_MIN_ATTEMPTS) {
+    return "directional";
+  }
+  return "insufficient_sample";
+}
+
+function buildCvSampleSizeWarning(
+  confidenceLevel: CvVersionConfidenceLevel,
+  attemptCount: number
+): string | null {
+  if (confidenceLevel === "insufficient_sample") {
+    return `${attemptCount} attempt${attemptCount === 1 ? "" : "s"} only — not enough evidence yet.`;
+  }
+  if (confidenceLevel === "directional") {
+    return `${attemptCount} attempts — directional signal only.`;
+  }
+  return null;
+}
+
+function buildCvScopeLabel(scope: CvVersionPerformanceScope, scopeValue: string): string {
+  if (scope === "global") {
+    return "All applications";
+  }
+  if (scope === "track") {
+    return scopeValue === "unknown" ? "Unknown track" : getRoleTrackLabel(scopeValue);
+  }
+  return getSourceLabel(scopeValue);
+}
+
+function sortCvPerformanceEntries(entries: CvVersionPerformanceEntry[]): CvVersionPerformanceEntry[] {
+  return [...entries].sort((left, right) => {
+    const responseDelta = (right.responseRate || 0) - (left.responseRate || 0);
+    if (responseDelta !== 0) return responseDelta;
+    if (right.attemptCount !== left.attemptCount) return right.attemptCount - left.attemptCount;
+    return left.cvVersion.localeCompare(right.cvVersion);
+  });
+}
+
+function finalizeCvPerformanceEntry(
+  accumulator: CvPerformanceAccumulator
+): CvVersionPerformanceEntry {
+  const confidenceLevel = classifyCvConfidenceLevel(accumulator.attemptCount);
+  return {
+    cvVersion: accumulator.cvVersion,
+    scope: accumulator.scope,
+    scopeValue: accumulator.scopeValue,
+    scopeLabel: accumulator.scopeLabel,
+    attemptCount: accumulator.attemptCount,
+    responseCount: accumulator.responseCount,
+    responseRate:
+      accumulator.attemptCount > 0
+        ? Number(((accumulator.responseCount / accumulator.attemptCount) * 100).toFixed(1))
+        : null,
+    interviewCount: accumulator.interviewCount,
+    interviewRate:
+      accumulator.attemptCount > 0
+        ? Number(((accumulator.interviewCount / accumulator.attemptCount) * 100).toFixed(1))
+        : null,
+    rejectionCount: accumulator.rejectionCount,
+    offerCount: accumulator.offerCount,
+    ghostedCount: accumulator.ghostedCount,
+    followUpDueCount: accumulator.followUpDueCount,
+    averageDaysToResponse:
+      accumulator.responseDays.length > 0
+        ? Number(
+            (
+              accumulator.responseDays.reduce((sum, value) => sum + value, 0) /
+              accumulator.responseDays.length
+            ).toFixed(1)
+          )
+        : null,
+    lastUsedAt: accumulator.lastUsedAt,
+    confidenceLevel,
+    sampleSizeWarning: buildCvSampleSizeWarning(confidenceLevel, accumulator.attemptCount),
+    recommendation: null,
+  };
+}
+
+function buildCvPerformanceEntries(
+  records: ApplicationOutcomeRecord[],
+  scope: CvVersionPerformanceScope,
+  scopeSelector: (record: ApplicationOutcomeRecord) => string
+): CvVersionPerformanceEntry[] {
+  const groups = new Map<string, CvPerformanceAccumulator>();
+
+  for (const record of records) {
+    if (record.recordKind !== "application_attempt") {
+      continue;
+    }
+
+    const scopeValue = scopeSelector(record);
+    const key = `${scope}:${scopeValue}:${record.cvVersion}`;
+    const existing = groups.get(key) || {
+      cvVersion: record.cvVersion || "unknown",
+      scope,
+      scopeValue,
+      scopeLabel: buildCvScopeLabel(scope, scopeValue),
+      attemptCount: 0,
+      responseCount: 0,
+      interviewCount: 0,
+      rejectionCount: 0,
+      offerCount: 0,
+      ghostedCount: 0,
+      followUpDueCount: 0,
+      responseDays: [],
+      lastUsedAt: null,
+    } satisfies CvPerformanceAccumulator;
+
+    existing.attemptCount += 1;
+    if (record.responseReceived) {
+      existing.responseCount += 1;
+    }
+    if (record.interviewReceived) {
+      existing.interviewCount += 1;
+    }
+    if (record.rejectionReceived) {
+      existing.rejectionCount += 1;
+    }
+    if (record.offerReceived) {
+      existing.offerCount += 1;
+    }
+    if (record.ghosted) {
+      existing.ghostedCount += 1;
+    }
+    if (record.followUpDue) {
+      existing.followUpDueCount += 1;
+    }
+    if (typeof record.daysToResponse === "number") {
+      existing.responseDays.push(record.daysToResponse);
+    }
+    if (!existing.lastUsedAt || new Date(record.applicationDate || 0) > new Date(existing.lastUsedAt)) {
+      existing.lastUsedAt = record.applicationDate || existing.lastUsedAt;
+    }
+
+    groups.set(key, existing);
+  }
+
+  return sortCvPerformanceEntries(Array.from(groups.values()).map(finalizeCvPerformanceEntry));
+}
+
+function pickCvRecommendation(
+  entries: CvVersionPerformanceEntry[],
+  scope: CvVersionPerformanceScope,
+  scopeValue: string,
+  scopeLabel: string
+): CvVersionRecommendation | null {
+  const ranked = entries.filter((entry) => entry.confidenceLevel === "stronger_signal");
+  if (ranked.length < 2) {
+    return null;
+  }
+
+  const [top, runnerUp] = sortCvPerformanceEntries(ranked);
+  if (top.responseRate == null || runnerUp.responseRate == null) {
+    return null;
+  }
+
+  if (top.responseRate - runnerUp.responseRate < CV_RECOMMENDATION_MIN_RESPONSE_RATE_LEAD) {
+    return null;
+  }
+
+  return {
+    scope,
+    scopeValue,
+    scopeLabel,
+    cvVersion: top.cvVersion,
+    attemptCount: top.attemptCount,
+    responseCount: top.responseCount,
+    responseRate: top.responseRate,
+    confidenceLevel: top.confidenceLevel,
+    rationale: `${top.cvVersion} leads by ${(top.responseRate - runnerUp.responseRate).toFixed(1)} response-rate points over ${runnerUp.cvVersion}.`,
+  };
+}
+
+function buildCvPerformanceSummary(records: ApplicationOutcomeRecord[]) {
+  const byVersion = buildCvPerformanceEntries(records, "global", () => "global");
+  const byTrack = buildCvPerformanceEntries(records, "track", (record) => record.roleTrack || "unknown");
+  const bySource = buildCvPerformanceEntries(records, "source", (record) => record.source || "unknown");
+
+  const globalRecommendation = pickCvRecommendation(byVersion, "global", "global", "All applications");
+
+  const byTrackRecommendations = Array.from(
+    byTrack.reduce((map, entry) => {
+      const list = map.get(entry.scopeValue) || [];
+      list.push(entry);
+      map.set(entry.scopeValue, list);
+      return map;
+    }, new Map<string, CvVersionPerformanceEntry[]>())
+  )
+    .map(([scopeValue, entries]) =>
+      pickCvRecommendation(entries, "track", scopeValue, buildCvScopeLabel("track", scopeValue))
+    )
+    .filter((entry): entry is CvVersionRecommendation => Boolean(entry));
+
+  const bySourceRecommendations = Array.from(
+    bySource.reduce((map, entry) => {
+      const list = map.get(entry.scopeValue) || [];
+      list.push(entry);
+      map.set(entry.scopeValue, list);
+      return map;
+    }, new Map<string, CvVersionPerformanceEntry[]>())
+  )
+    .map(([scopeValue, entries]) =>
+      pickCvRecommendation(entries, "source", scopeValue, buildCvScopeLabel("source", scopeValue))
+    )
+    .filter((entry): entry is CvVersionRecommendation => Boolean(entry));
+
+  const applyRecommendationLabel = (
+    entries: CvVersionPerformanceEntry[],
+    recommendation: CvVersionRecommendation | null
+  ) =>
+    entries.map((entry) => ({
+      ...entry,
+      recommendation:
+        recommendation && recommendation.cvVersion === entry.cvVersion ? "Recommended for this scope." : null,
+    }));
+
+  return {
+    byVersion: applyRecommendationLabel(byVersion, globalRecommendation),
+    byTrack: byTrack.map((entry) => {
+      const recommendation = byTrackRecommendations.find(
+        (item) => item.scopeValue === entry.scopeValue && item.cvVersion === entry.cvVersion
+      );
+      return {
+        ...entry,
+        recommendation: recommendation ? "Recommended for this track." : null,
+      };
+    }),
+    bySource: bySource.map((entry) => {
+      const recommendation = bySourceRecommendations.find(
+        (item) => item.scopeValue === entry.scopeValue && item.cvVersion === entry.cvVersion
+      );
+      return {
+        ...entry,
+        recommendation: recommendation ? "Recommended for this source." : null,
+      };
+    }),
+    recommendations: {
+      global: globalRecommendation,
+      byTrack: byTrackRecommendations,
+      bySource: bySourceRecommendations,
+    },
+  };
 }
 
 function summarizeDimension(
@@ -560,6 +831,7 @@ export function summariseApplicationOutcomes(records: ApplicationOutcomeRecord[]
     stageLeakage: summarizeStageLeakage(sorted),
     followUpDue: sorted.filter((record) => record.followUpDue),
     ghosted: sorted.filter((record) => record.ghosted),
+    cvPerformance: buildCvPerformanceSummary(sorted),
   };
 }
 
