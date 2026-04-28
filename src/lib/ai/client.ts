@@ -19,7 +19,11 @@ import {
 } from "./config";
 import { checkAIRateLimit, getAIUsageStats, recordAICall } from "./rate-limiter";
 import { appendToCollection, Collections } from "@/lib/storage";
-import { classifyTelemetryErrorType, recordAiTelemetryEvent } from "./telemetry";
+import {
+  classifyTelemetryErrorType,
+  recordAiTelemetryEvent,
+  summarizeAiRuntimeErrorForLogs,
+} from "./telemetry";
 
 function isUsageLimitReason(reason?: string): boolean {
   return Boolean(
@@ -318,7 +322,30 @@ function classifyAIError(err: unknown): AIFailureKind {
     return "invalid_json";
   }
 
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  if (/429|rate.?limit|too many requests|free-models-per-day|quota/i.test(message)) {
+    return "rate_limited";
+  }
+
   return "runtime_error";
+}
+
+function isOpenRouterFreeModel(model: string): boolean {
+  return /:free$/i.test(model.trim());
+}
+
+function shouldSkipRemainingOpenRouterFreeModels(input: {
+  runtime: AIRuntimeCandidate;
+  model: string;
+  failureKind: AIFailureKind;
+  errorMessage: string;
+}): boolean {
+  return (
+    input.runtime.provider === "openrouter" &&
+    isOpenRouterFreeModel(input.model) &&
+    (input.failureKind === "rate_limited" ||
+      /429|rate.?limit|too many requests|free-models-per-day|quota/i.test(input.errorMessage))
+  );
 }
 
 async function callRuntime(
@@ -733,6 +760,7 @@ export async function callAI<T = unknown>(
   let lastRawOutput = "";
   let totalAttemptCount = 0;
   let fallbackAttempted = false;
+  let skipRemainingOpenRouterFreeModels = false;
 
   for (let runtimeIndex = 0; runtimeIndex < runtimeCandidates.length; runtimeIndex++) {
     const runtime = runtimeCandidates[runtimeIndex];
@@ -751,6 +779,13 @@ export async function callAI<T = unknown>(
 
     for (let modelIndex = 0; modelIndex < candidateModels.length; modelIndex++) {
       const model = candidateModels[modelIndex];
+      if (
+        skipRemainingOpenRouterFreeModels &&
+        runtime.provider === "openrouter" &&
+        isOpenRouterFreeModel(model)
+      ) {
+        continue;
+      }
       const attemptsForModel = modelIndex === 0 ? primaryAttempts : 1;
 
       for (let attempt = 0; attempt < attemptsForModel; attempt++) {
@@ -883,14 +918,33 @@ export async function callAI<T = unknown>(
           lastError = err instanceof Error ? err.message : "Unknown AI error";
           lastFailureKind = classifyAIError(err);
           lastRawOutput = "";
-          console.error(
-            `[ai-client] ${options.taskType} using ${runtime.provider}/${model} attempt ${attempt + 1} failed:`,
-            lastError
+          const safeErrorSummary = summarizeAiRuntimeErrorForLogs({
+            failureKind: lastFailureKind,
+            errorSummary: lastError,
+          });
+          console.warn(
+            `[ai-client] ${options.taskType} failed on ${runtime.provider}/${model}: ${safeErrorSummary}`
           );
+          if (
+            shouldSkipRemainingOpenRouterFreeModels({
+              runtime,
+              model,
+              failureKind: lastFailureKind,
+              errorMessage: lastError,
+            })
+          ) {
+            skipRemainingOpenRouterFreeModels = true;
+            break;
+          }
         }
       }
     }
   }
+
+  const safeLastErrorSummary = summarizeAiRuntimeErrorForLogs({
+    failureKind: lastFailureKind,
+    errorSummary: lastError,
+  });
 
   await logAICall({
     timestamp: new Date().toISOString(),
@@ -905,7 +959,7 @@ export async function callAI<T = unknown>(
     attemptCount: totalAttemptCount,
     effectiveTimeoutMs,
     failureKind: lastFailureKind,
-    error: lastError,
+    error: safeLastErrorSummary,
     ...(config.logPromptPreviews
       ? { inputPreview: serializedInput.slice(0, 200) }
       : {}),
@@ -958,7 +1012,7 @@ export async function callAI<T = unknown>(
 
   return {
     success: false,
-    error: `AI request failed: ${lastError}`,
+    error: `AI request failed: ${safeLastErrorSummary}`,
     rawOutput: lastRawOutput,
     failureKind: lastFailureKind,
     attemptCount: totalAttemptCount,

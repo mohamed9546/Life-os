@@ -85,6 +85,33 @@ export function sanitizeTelemetryErrorSummary(input: {
   return "AI runtime error.";
 }
 
+export function summarizeAiRuntimeErrorForLogs(input: {
+  failureKind?: AIFailureKind | null;
+  errorSummary?: string | null;
+}): string {
+  const safeSummary = sanitizeTelemetryErrorSummary({
+    errorType: input.failureKind || null,
+    errorSummary: input.errorSummary,
+  });
+
+  if (!safeSummary) {
+    return "runtime error";
+  }
+
+  switch (safeSummary) {
+    case "AI runtime timed out.":
+      return "timed out";
+    case "Rate limit exceeded for AI provider route.":
+      return "rate limit exceeded";
+    case "Provider authentication or access error.":
+      return "authentication or access error";
+    case "AI runtime error.":
+      return "runtime error";
+    default:
+      return safeSummary.replace(/\.$/, "");
+  }
+}
+
 function toNullableNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
