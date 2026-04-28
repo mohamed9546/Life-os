@@ -526,6 +526,46 @@ export interface CvVersionPerformanceSummary {
   };
 }
 
+export type RecruiterCompanyActionRecommendation =
+  | "prioritise_follow_up"
+  | "watch"
+  | "low_signal"
+  | "avoid_for_now"
+  | "insufficient_data";
+
+export type RecruiterCompanyPerformanceScope =
+  | "company"
+  | "recruiter"
+  | "agency"
+  | "source_company";
+
+export interface RecruiterCompanyPerformanceEntry {
+  key: string;
+  label: string;
+  scope: RecruiterCompanyPerformanceScope;
+  source: string | null;
+  company: string | null;
+  recruiterName: string | null;
+  agencyName: string | null;
+  roleTrack: string | null;
+  attemptCount: number;
+  pipelineOnlyCount: number;
+  responseCount: number;
+  responseRate: number | null;
+  interviewCount: number;
+  interviewRate: number | null;
+  rejectionCount: number;
+  offerCount: number;
+  ghostedCount: number;
+  followUpDueCount: number;
+  usefulRoles: number;
+  averageDaysToResponse: number | null;
+  lastInteractionAt: string | null;
+  confidenceLevel: CvVersionConfidenceLevel;
+  sampleSizeWarning: string | null;
+  recommendedAction: RecruiterCompanyActionRecommendation;
+}
+
 export interface ApplicationOutcomeSnapshot {
   userId: string;
   generatedAt: Timestamp;
@@ -547,6 +587,10 @@ export interface ApplicationOutcomeSnapshot {
     followUpDue: ApplicationOutcomeRecord[];
     ghosted: ApplicationOutcomeRecord[];
     cvPerformance: CvVersionPerformanceSummary;
+    companyPerformance: RecruiterCompanyPerformanceEntry[];
+    recruiterPerformance: RecruiterCompanyPerformanceEntry[];
+    agencyPerformance: RecruiterCompanyPerformanceEntry[];
+    sourceCompanyPerformance: RecruiterCompanyPerformanceEntry[];
   };
 }
 
