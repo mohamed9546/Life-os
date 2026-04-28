@@ -506,4 +506,247 @@ describe("application outcome ETL", () => {
     const qaCv = summaries.byCvVersion.find((entry) => entry.key === "QA Focus");
     expect(qaCv?.usefulRoles).toBe(3);
   });
+
+  it("builds CV performance from application attempts only and keeps unknown bucket visible", () => {
+    const records = [
+      createOutcomeRecord({
+        recordId: "attempt-1",
+        recordKind: "application_attempt",
+        cvVersion: "CTA Master",
+        scope: undefined,
+        source: "adzuna",
+        roleTrack: "clinical",
+        responseReceived: true,
+        interviewReceived: true,
+        currentStatus: "interview",
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-2",
+        recordKind: "application_attempt",
+        cvVersion: "unknown",
+        source: "adzuna",
+        roleTrack: "clinical",
+        responseReceived: false,
+        currentStatus: "applied",
+      }),
+      createOutcomeRecord({
+        recordId: "pipeline-only",
+        recordKind: "pipeline_job",
+        applicationAttemptId: null,
+        cvVersion: "QA Focus",
+        source: "reed",
+        roleTrack: "qa",
+        currentStatus: "tracked",
+        applicationDate: null,
+      }),
+    ];
+
+    const summaries = summariseApplicationOutcomes(records as any);
+
+    expect(summaries.cvPerformance.byVersion).toHaveLength(2);
+    expect(summaries.cvPerformance.byVersion.find((entry) => entry.cvVersion === "QA Focus")).toBeUndefined();
+    expect(summaries.cvPerformance.byVersion.find((entry) => entry.cvVersion === "unknown")?.attemptCount).toBe(1);
+    expect(summaries.cvPerformance.byVersion.find((entry) => entry.cvVersion === "CTA Master")?.responseCount).toBe(1);
+    expect(summaries.cvPerformance.byVersion.find((entry) => entry.cvVersion === "CTA Master")?.interviewCount).toBe(1);
+  });
+
+  it("assigns confidence buckets by attempt count", () => {
+    const records = [
+      ...Array.from({ length: 2 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `insufficient-${index}`,
+          cvVersion: "CTA Master",
+          currentStatus: "applied",
+          latestAttemptStatus: "applied",
+        })
+      ),
+      ...Array.from({ length: 3 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `directional-${index}`,
+          cvVersion: "QA Focus",
+          currentStatus: "applied",
+          latestAttemptStatus: "applied",
+          source: "reed",
+          roleTrack: "qa",
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `strong-${index}`,
+          cvVersion: "Regulatory Affairs",
+          currentStatus: "applied",
+          latestAttemptStatus: "applied",
+          source: "jobsac",
+          roleTrack: "regulatory",
+        })
+      ),
+    ];
+
+    const summaries = summariseApplicationOutcomes(records as any);
+
+    expect(summaries.cvPerformance.byVersion.find((entry) => entry.cvVersion === "CTA Master")?.confidenceLevel).toBe("insufficient_sample");
+    expect(summaries.cvPerformance.byVersion.find((entry) => entry.cvVersion === "QA Focus")?.confidenceLevel).toBe("directional");
+    expect(summaries.cvPerformance.byVersion.find((entry) => entry.cvVersion === "Regulatory Affairs")?.confidenceLevel).toBe("stronger_signal");
+  });
+
+  it("suppresses recommendations below six attempts or below ten-point lead, and recommends when both thresholds are met", () => {
+    const weakSampleRecords = Array.from({ length: 5 }, (_, index) =>
+      createOutcomeRecord({
+        recordId: `weak-${index}`,
+        cvVersion: "CTA Master",
+        currentStatus: index < 3 ? "interview" : "applied",
+        responseReceived: index < 3,
+        interviewReceived: index < 3,
+        latestAttemptStatus: "applied",
+      })
+    );
+
+    const weakLeadRecords = [
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `lead-a-${index}`,
+          cvVersion: "CTA Master",
+          currentStatus: index < 3 ? "interview" : "applied",
+          responseReceived: index < 3,
+          interviewReceived: index < 3,
+          latestAttemptStatus: "applied",
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `lead-b-${index}`,
+          cvVersion: "QA Focus",
+          currentStatus: index < 3 ? "interview" : "applied",
+          responseReceived: index < 3,
+          interviewReceived: index < 3,
+          latestAttemptStatus: "applied",
+          source: "reed",
+          roleTrack: "qa",
+        })
+      ),
+    ];
+
+    const strongLeadRecords = [
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `strong-a-${index}`,
+          cvVersion: "CTA Master",
+          currentStatus: index < 4 ? "interview" : "applied",
+          responseReceived: index < 4,
+          interviewReceived: index < 4,
+          latestAttemptStatus: "applied",
+          roleTrack: "clinical",
+          source: "adzuna",
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `strong-b-${index}`,
+          cvVersion: "QA Focus",
+          currentStatus: index < 1 ? "interview" : "applied",
+          responseReceived: index < 1,
+          interviewReceived: index < 1,
+          latestAttemptStatus: "applied",
+          roleTrack: "qa",
+          source: "reed",
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `source-a-${index}`,
+          cvVersion: "CTA Master",
+          currentStatus: index < 4 ? "interview" : "applied",
+          responseReceived: index < 4,
+          interviewReceived: index < 4,
+          latestAttemptStatus: "applied",
+          roleTrack: "clinical",
+          source: "jobsac",
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `source-b-${index}`,
+          cvVersion: "Regulatory Affairs",
+          currentStatus: index < 1 ? "interview" : "applied",
+          responseReceived: index < 1,
+          interviewReceived: index < 1,
+          latestAttemptStatus: "applied",
+          roleTrack: "regulatory",
+          source: "jobsac",
+        })
+      ),
+    ];
+
+    expect(summariseApplicationOutcomes(weakSampleRecords as any).cvPerformance.recommendations.global).toBeNull();
+    expect(summariseApplicationOutcomes(weakLeadRecords as any).cvPerformance.recommendations.global).toBeNull();
+
+    const strong = summariseApplicationOutcomes(strongLeadRecords as any);
+    expect(strong.cvPerformance.recommendations.global?.cvVersion).toBe("CTA Master");
+    expect(strong.cvPerformance.recommendations.global?.responseRate).toBeGreaterThan(60);
+    expect(strong.cvPerformance.byVersion.find((entry) => entry.cvVersion === "CTA Master")?.recommendation).toBe("Recommended for this scope.");
+    expect(strong.cvPerformance.recommendations.bySource.find((entry) => entry.scopeValue === "jobsac")?.cvVersion).toBe("CTA Master");
+  });
+
+  it("builds track-specific and source-specific CV performance from their own slices only", () => {
+    const records = [
+      ...Array.from({ length: 3 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `clinical-${index}`,
+          cvVersion: "CTA Master",
+          roleTrack: "clinical",
+          source: "adzuna",
+          currentStatus: index < 2 ? "interview" : "applied",
+          responseReceived: index < 2,
+          interviewReceived: index < 2,
+          latestAttemptStatus: "applied",
+        })
+      ),
+      ...Array.from({ length: 3 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `qa-${index}`,
+          cvVersion: "QA Focus",
+          roleTrack: "qa",
+          source: "reed",
+          currentStatus: index < 1 ? "interview" : "applied",
+          responseReceived: index < 1,
+          interviewReceived: index < 1,
+          latestAttemptStatus: "applied",
+        })
+      ),
+      ...Array.from({ length: 2 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `source-alt-${index}`,
+          cvVersion: "CTA Master",
+          roleTrack: "clinical",
+          source: "jobsac",
+          currentStatus: "applied",
+          responseReceived: false,
+          latestAttemptStatus: "applied",
+        })
+      ),
+    ];
+
+    const summaries = summariseApplicationOutcomes(records as any);
+    const clinicalTrack = summaries.cvPerformance.byTrack.find(
+      (entry) => entry.scopeValue === "clinical" && entry.cvVersion === "CTA Master"
+    );
+    const qaTrack = summaries.cvPerformance.byTrack.find(
+      (entry) => entry.scopeValue === "qa" && entry.cvVersion === "QA Focus"
+    );
+    const adzunaSource = summaries.cvPerformance.bySource.find(
+      (entry) => entry.scopeValue === "adzuna" && entry.cvVersion === "CTA Master"
+    );
+    const jobsacSource = summaries.cvPerformance.bySource.find(
+      (entry) => entry.scopeValue === "jobsac" && entry.cvVersion === "CTA Master"
+    );
+
+    expect(clinicalTrack?.attemptCount).toBe(5);
+    expect(clinicalTrack?.responseCount).toBe(2);
+    expect(qaTrack?.attemptCount).toBe(3);
+    expect(qaTrack?.responseCount).toBe(1);
+    expect(adzunaSource?.attemptCount).toBe(3);
+    expect(adzunaSource?.responseCount).toBe(2);
+    expect(jobsacSource?.attemptCount).toBe(2);
+    expect(jobsacSource?.responseCount).toBe(0);
+  });
 });

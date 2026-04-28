@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { ActionButton, AlertBanner, Panel } from "@/components/ui/system";
-import { ApplicationOutcomeSnapshot } from "@/types";
+import {
+  ApplicationOutcomeSnapshot,
+  CvVersionPerformanceEntry,
+  CvVersionRecommendation,
+} from "@/types";
 
 type OutcomesResponse = {
   ok: boolean;
@@ -59,7 +63,7 @@ export function ApplicationOutcomesPanel() {
   const bestSource = useMemo(() => pickBestSummary(snapshot?.summaries.bySource || []), [snapshot]);
   const bestTrack = useMemo(() => pickBestSummary(snapshot?.summaries.byTrack || []), [snapshot]);
   const bestCvVersion = useMemo(
-    () => pickBestSummary((snapshot?.summaries.byCvVersion || []).filter((entry) => entry.appliedAttempts >= 2)),
+    () => snapshot?.summaries.cvPerformance?.recommendations.global || null,
     [snapshot]
   );
   const recentRecords = useMemo(
@@ -128,11 +132,17 @@ export function ApplicationOutcomesPanel() {
               meta={bestTrack ? `${bestTrack.responded}/${bestTrack.appliedAttempts} responded` : "Awaiting enough attempt history."}
             />
             <SummaryCard
-              title="Best CV version"
-              label={bestCvVersion?.label || "Need at least 2 applied attempts"}
-              meta={bestCvVersion ? `${bestCvVersion.responded}/${bestCvVersion.appliedAttempts} responded` : "CV leaderboard activates once sample size exists."}
+              title="Recommended CV"
+              label={bestCvVersion?.cvVersion || "No strong CV signal yet"}
+              meta={
+                bestCvVersion
+                  ? `${bestCvVersion.responseCount}/${bestCvVersion.attemptCount} responded · ${bestCvVersion.responseRate}% response`
+                  : "Recommendation appears only with 6+ attempts and a >=10-point lead."
+              }
             />
           </div>
+
+          <CvPerformanceSection snapshot={snapshot} />
 
           <div className="space-y-2">
             <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Recent attempt rows</p>
@@ -179,6 +189,109 @@ function pickBestSummary(entries: ApplicationOutcomeSnapshot["summaries"]["bySou
       if (responseDelta !== 0) return responseDelta;
       return right.appliedAttempts - left.appliedAttempts;
     })[0] || null;
+}
+
+export function CvPerformanceSection({ snapshot }: { snapshot: ApplicationOutcomeSnapshot }) {
+  const byVersion = snapshot.summaries.cvPerformance?.byVersion || [];
+  const byTrack = snapshot.summaries.cvPerformance?.byTrack || [];
+  const insufficientSampleCount = byVersion.filter(
+    (entry) => entry.confidenceLevel === "insufficient_sample"
+  ).length;
+  const noResponseCount = byVersion.filter((entry) => entry.responseCount === 0).length;
+  const directionalCount = byVersion.filter((entry) => entry.confidenceLevel === "directional").length;
+  const topEntries = byVersion.slice(0, 4);
+  const trackLeaders = pickTrackLeaders(byTrack).slice(0, 4);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-3">
+        <SummaryCard
+          title="CV sample coverage"
+          label={`${byVersion.length} tracked version${byVersion.length === 1 ? "" : "s"}`}
+          meta={`${insufficientSampleCount} insufficient-sample · ${directionalCount} directional`}
+        />
+        <SummaryCard
+          title="No response yet"
+          label={`${noResponseCount} CV version${noResponseCount === 1 ? "" : "s"}`}
+          meta="Counts versions that have attempt data but zero responses so far."
+        />
+        <SummaryCard
+          title="Unknown CV usage"
+          label={`${byVersion.find((entry) => entry.cvVersion === "unknown")?.attemptCount || 0} attempts`}
+          meta="Unknown CV remains visible until attribution discipline improves."
+        />
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">CV evidence</p>
+        {topEntries.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">No CV attempt data yet.</p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {topEntries.map((entry) => (
+              <div key={`${entry.scope}-${entry.scopeValue}-${entry.cvVersion}`} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-white">{entry.cvVersion}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {entry.attemptCount} attempts · {entry.responseCount} responses · {entry.responseRate ?? 0}% response · {entry.interviewCount} interviews · {entry.interviewRate ?? 0}% interview
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[11px]">
+                    <Pill label={entry.confidenceLevel.replace(/_/g, " ")} tone={entry.confidenceLevel === "stronger_signal" ? "success" : entry.confidenceLevel === "directional" ? "warning" : "danger"} />
+                    {entry.recommendation ? <Pill label="recommended" tone="success" /> : null}
+                  </div>
+                </div>
+                {entry.sampleSizeWarning ? (
+                  <p className="mt-2 text-xs text-amber-300">{entry.sampleSizeWarning}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Track-specific CV performance</p>
+        {trackLeaders.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">No track-specific CV evidence yet.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {trackLeaders.map((entry) => (
+              <div key={`${entry.scopeValue}-${entry.cvVersion}`} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                <p className="text-sm font-medium text-white">{entry.scopeLabel}: {entry.cvVersion}</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {entry.attemptCount} attempts · {entry.responseCount} responses · {entry.responseRate ?? 0}% response
+                </p>
+                {entry.sampleSizeWarning ? (
+                  <p className="mt-2 text-xs text-amber-300">{entry.sampleSizeWarning}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function pickTrackLeaders(entries: CvVersionPerformanceEntry[]) {
+  const byTrack = new Map<string, CvVersionPerformanceEntry[]>();
+  for (const entry of entries) {
+    const current = byTrack.get(entry.scopeValue) || [];
+    current.push(entry);
+    byTrack.set(entry.scopeValue, current);
+  }
+
+  return Array.from(byTrack.values())
+    .map((trackEntries) =>
+      [...trackEntries].sort((left, right) => {
+        const responseDelta = (right.responseRate || 0) - (left.responseRate || 0);
+        if (responseDelta !== 0) return responseDelta;
+        return right.attemptCount - left.attemptCount;
+      })[0]
+    )
+    .filter((entry): entry is CvVersionPerformanceEntry => Boolean(entry));
 }
 
 function OutcomeStatCard({
