@@ -749,4 +749,175 @@ describe("application outcome ETL", () => {
     expect(jobsacSource?.attemptCount).toBe(2);
     expect(jobsacSource?.responseCount).toBe(0);
   });
+
+  it("builds company, recruiter, agency, and source-company performance with attempt-only denominators", () => {
+    const records = [
+      createOutcomeRecord({
+        recordId: "attempt-acme-1",
+        company: "Acme",
+        recruiterName: "Alice Recruiter",
+        agencyName: "Agency One",
+        source: "adzuna",
+        roleTrack: "clinical",
+        currentStatus: "interview",
+        responseReceived: true,
+        interviewReceived: true,
+        latestAttemptStatus: "applied",
+        followUpDue: true,
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-acme-2",
+        company: "Acme",
+        recruiterName: "Alice Recruiter",
+        agencyName: "Agency One",
+        source: "adzuna",
+        roleTrack: "clinical",
+        currentStatus: "applied",
+        latestAttemptStatus: "applied",
+      }),
+      createOutcomeRecord({
+        recordId: "pipeline-acme",
+        recordKind: "pipeline_job",
+        applicationAttemptId: null,
+        company: "Acme",
+        recruiterName: "Alice Recruiter",
+        agencyName: "Agency One",
+        source: "adzuna",
+        roleTrack: "clinical",
+        currentStatus: "tracked",
+        applicationDate: null,
+      }),
+      createOutcomeRecord({
+        recordId: "attempt-unknown",
+        company: "unknown",
+        recruiterName: null,
+        agencyName: null,
+        source: "reed",
+        roleTrack: "qa",
+        currentStatus: "rejected",
+        latestAttemptStatus: "applied",
+        responseReceived: true,
+        rejectionReceived: true,
+      }),
+    ];
+
+    const summaries = summariseApplicationOutcomes(records as any);
+
+    const company = summaries.companyPerformance.find((entry) => entry.key === "Acme");
+    expect(company).toMatchObject({
+      attemptCount: 2,
+      pipelineOnlyCount: 1,
+      responseCount: 1,
+      responseRate: 50,
+      interviewCount: 1,
+      interviewRate: 50,
+      usefulRoles: 3,
+    });
+
+    const recruiter = summaries.recruiterPerformance.find((entry) => entry.key === "Alice Recruiter");
+    expect(recruiter).toMatchObject({
+      attemptCount: 2,
+      pipelineOnlyCount: 1,
+      responseRate: 50,
+    });
+
+    const agency = summaries.agencyPerformance.find((entry) => entry.key === "Agency One");
+    expect(agency).toMatchObject({
+      attemptCount: 2,
+      pipelineOnlyCount: 1,
+      responseRate: 50,
+    });
+
+    const sourceCompany = summaries.sourceCompanyPerformance.find((entry) => entry.key === "adzuna::Acme");
+    expect(sourceCompany).toMatchObject({
+      attemptCount: 2,
+      pipelineOnlyCount: 1,
+      responseRate: 50,
+      source: "adzuna",
+      company: "Acme",
+    });
+
+    expect(summaries.recruiterPerformance.find((entry) => entry.key === "unknown")?.attemptCount).toBe(1);
+    expect(summaries.agencyPerformance.find((entry) => entry.key === "unknown")?.attemptCount).toBe(1);
+    expect(summaries.companyPerformance.find((entry) => entry.key === "unknown")?.attemptCount).toBe(1);
+  });
+
+  it("applies confidence buckets and conservative recruiter/company action guidance", () => {
+    const records = [
+      ...Array.from({ length: 2 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `insufficient-${index}`,
+          company: "Acme",
+          recruiterName: "Alice Recruiter",
+          source: "adzuna",
+          currentStatus: index === 0 ? "interview" : "applied",
+          responseReceived: index === 0,
+          interviewReceived: index === 0,
+          latestAttemptStatus: "applied",
+          followUpDue: index === 1,
+        })
+      ),
+      ...Array.from({ length: 4 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `directional-${index}`,
+          company: "Beta",
+          recruiterName: "Bob Recruiter",
+          source: "reed",
+          currentStatus: "applied",
+          latestAttemptStatus: "applied",
+          responseReceived: false,
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `avoid-${index}`,
+          company: "Gamma",
+          recruiterName: "Carol Recruiter",
+          source: "jobsac",
+          currentStatus: index < 3 ? "rejected" : "applied",
+          latestAttemptStatus: "applied",
+          responseReceived: false,
+          rejectionReceived: index < 3,
+          ghosted: index >= 3,
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `watch-${index}`,
+          company: "Delta",
+          recruiterName: "Dana Recruiter",
+          source: "linkedin",
+          currentStatus: index < 2 ? "interview" : "applied",
+          latestAttemptStatus: "applied",
+          responseReceived: index < 2,
+          interviewReceived: index < 2,
+        })
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        createOutcomeRecord({
+          recordId: `followup-${index}`,
+          company: "Epsilon",
+          recruiterName: "Eve Recruiter",
+          source: "linkedin",
+          currentStatus: index < 2 ? "interview" : "applied",
+          latestAttemptStatus: "applied",
+          responseReceived: index < 2,
+          interviewReceived: index < 2,
+          followUpDue: index >= 4,
+        })
+      ),
+    ];
+
+    const summaries = summariseApplicationOutcomes(records as any);
+
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Acme")?.confidenceLevel).toBe("insufficient_sample");
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Beta")?.confidenceLevel).toBe("directional");
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Gamma")?.confidenceLevel).toBe("stronger_signal");
+
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Acme")?.recommendedAction).toBe("insufficient_data");
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Beta")?.recommendedAction).toBe("low_signal");
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Gamma")?.recommendedAction).toBe("avoid_for_now");
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Delta")?.recommendedAction).toBe("watch");
+    expect(summaries.companyPerformance.find((entry) => entry.key === "Epsilon")?.recommendedAction).toBe("prioritise_follow_up");
+  });
 });

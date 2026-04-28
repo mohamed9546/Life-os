@@ -15,6 +15,9 @@ import {
   CvVersionPerformanceEntry,
   CvVersionPerformanceScope,
   CvVersionRecommendation,
+  RecruiterCompanyActionRecommendation,
+  RecruiterCompanyPerformanceEntry,
+  RecruiterCompanyPerformanceScope,
   ApplicationOutcomeRecord,
   ApplicationOutcomeSnapshot,
   ApplicationOutcomeStageLeakageEntry,
@@ -78,6 +81,28 @@ interface CvPerformanceAccumulator {
   followUpDueCount: number;
   responseDays: number[];
   lastUsedAt: string | null;
+}
+
+interface RecruiterCompanyPerformanceAccumulator {
+  key: string;
+  label: string;
+  scope: RecruiterCompanyPerformanceScope;
+  source: string | null;
+  company: string | null;
+  recruiterName: string | null;
+  agencyName: string | null;
+  roleTrack: string | null;
+  attemptCount: number;
+  pipelineOnlyCount: number;
+  responseCount: number;
+  interviewCount: number;
+  rejectionCount: number;
+  offerCount: number;
+  ghostedCount: number;
+  followUpDueCount: number;
+  usefulRoles: number;
+  responseDays: number[];
+  lastInteractionAt: string | null;
 }
 
 function normalizePath(value?: string | null): string | null {
@@ -327,6 +352,19 @@ function buildCvSampleSizeWarning(
   return null;
 }
 
+function buildRecruiterCompanySampleSizeWarning(
+  confidenceLevel: CvVersionConfidenceLevel,
+  attemptCount: number
+): string | null {
+  if (confidenceLevel === "insufficient_sample") {
+    return `${attemptCount} attempt${attemptCount === 1 ? "" : "s"} only — not enough evidence yet.`;
+  }
+  if (confidenceLevel === "directional") {
+    return `${attemptCount} attempts — directional signal only.`;
+  }
+  return null;
+}
+
 function buildCvScopeLabel(scope: CvVersionPerformanceScope, scopeValue: string): string {
   if (scope === "global") {
     return "All applications";
@@ -337,12 +375,78 @@ function buildCvScopeLabel(scope: CvVersionPerformanceScope, scopeValue: string)
   return getSourceLabel(scopeValue);
 }
 
+function buildPerformanceKeyPart(value: string | null | undefined): string {
+  return (value || "unknown").trim() || "unknown";
+}
+
+function parseSourceCompanyKey(key: string): { source: string; company: string } {
+  const [source, company] = key.split("::", 2);
+  return {
+    source: source || "unknown",
+    company: company || "unknown",
+  };
+}
+
+function buildRecruiterCompanyLabel(scope: RecruiterCompanyPerformanceScope, key: string): string {
+  if (scope === "company") {
+    return key;
+  }
+  if (scope === "recruiter") {
+    return key;
+  }
+  if (scope === "agency") {
+    return key;
+  }
+  const parsed = parseSourceCompanyKey(key);
+  return `${getSourceLabel(parsed.source)} · ${parsed.company}`;
+}
+
 function sortCvPerformanceEntries(entries: CvVersionPerformanceEntry[]): CvVersionPerformanceEntry[] {
   return [...entries].sort((left, right) => {
     const responseDelta = (right.responseRate || 0) - (left.responseRate || 0);
     if (responseDelta !== 0) return responseDelta;
     if (right.attemptCount !== left.attemptCount) return right.attemptCount - left.attemptCount;
     return left.cvVersion.localeCompare(right.cvVersion);
+  });
+}
+
+function recruiterCompanyActionPriority(action: RecruiterCompanyActionRecommendation): number {
+  switch (action) {
+    case "prioritise_follow_up":
+      return 5;
+    case "avoid_for_now":
+      return 4;
+    case "watch":
+      return 3;
+    case "low_signal":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function sortRecruiterCompanyEntries(
+  entries: RecruiterCompanyPerformanceEntry[]
+): RecruiterCompanyPerformanceEntry[] {
+  return [...entries].sort((left, right) => {
+    const actionDelta =
+      recruiterCompanyActionPriority(right.recommendedAction) -
+      recruiterCompanyActionPriority(left.recommendedAction);
+    if (actionDelta !== 0) return actionDelta;
+
+    const recencyDelta =
+      new Date(right.lastInteractionAt || 0).getTime() -
+      new Date(left.lastInteractionAt || 0).getTime();
+    if (recencyDelta !== 0) return recencyDelta;
+
+    const responseDelta = (right.responseRate || 0) - (left.responseRate || 0);
+    if (responseDelta !== 0) return responseDelta;
+
+    if (right.attemptCount !== left.attemptCount) {
+      return right.attemptCount - left.attemptCount;
+    }
+
+    return left.label.localeCompare(right.label);
   });
 }
 
@@ -383,6 +487,105 @@ function finalizeCvPerformanceEntry(
     confidenceLevel,
     sampleSizeWarning: buildCvSampleSizeWarning(confidenceLevel, accumulator.attemptCount),
     recommendation: null,
+  };
+}
+
+function determineRecruiterCompanyAction(
+  entry: Pick<
+    RecruiterCompanyPerformanceEntry,
+    | "attemptCount"
+    | "responseCount"
+    | "interviewCount"
+    | "offerCount"
+    | "ghostedCount"
+    | "rejectionCount"
+    | "followUpDueCount"
+    | "usefulRoles"
+    | "confidenceLevel"
+  >
+): RecruiterCompanyActionRecommendation {
+  if (entry.confidenceLevel === "insufficient_sample") {
+    return "insufficient_data";
+  }
+
+  if (
+    entry.confidenceLevel === "stronger_signal" &&
+    entry.responseCount === 0 &&
+    entry.ghostedCount + entry.rejectionCount >= Math.max(3, Math.ceil(entry.attemptCount / 2))
+  ) {
+    return "avoid_for_now";
+  }
+
+  if (
+    entry.followUpDueCount > 0 &&
+    (entry.responseCount > 0 || entry.interviewCount > 0 || entry.offerCount > 0 || entry.usefulRoles > 0)
+  ) {
+    return "prioritise_follow_up";
+  }
+
+  if (
+    entry.responseCount > 0 ||
+    entry.interviewCount > 0 ||
+    entry.offerCount > 0 ||
+    entry.followUpDueCount > 0
+  ) {
+    return "watch";
+  }
+
+  return "low_signal";
+}
+
+function finalizeRecruiterCompanyPerformanceEntry(
+  accumulator: RecruiterCompanyPerformanceAccumulator
+): RecruiterCompanyPerformanceEntry {
+  const confidenceLevel = classifyCvConfidenceLevel(accumulator.attemptCount);
+  const base: RecruiterCompanyPerformanceEntry = {
+    key: accumulator.key,
+    label: accumulator.label,
+    scope: accumulator.scope,
+    source: accumulator.source,
+    company: accumulator.company,
+    recruiterName: accumulator.recruiterName,
+    agencyName: accumulator.agencyName,
+    roleTrack: accumulator.roleTrack,
+    attemptCount: accumulator.attemptCount,
+    pipelineOnlyCount: accumulator.pipelineOnlyCount,
+    responseCount: accumulator.responseCount,
+    responseRate:
+      accumulator.attemptCount > 0
+        ? Number(((accumulator.responseCount / accumulator.attemptCount) * 100).toFixed(1))
+        : null,
+    interviewCount: accumulator.interviewCount,
+    interviewRate:
+      accumulator.attemptCount > 0
+        ? Number(((accumulator.interviewCount / accumulator.attemptCount) * 100).toFixed(1))
+        : null,
+    rejectionCount: accumulator.rejectionCount,
+    offerCount: accumulator.offerCount,
+    ghostedCount: accumulator.ghostedCount,
+    followUpDueCount: accumulator.followUpDueCount,
+    usefulRoles: accumulator.usefulRoles,
+    averageDaysToResponse:
+      accumulator.responseDays.length > 0
+        ? Number(
+            (
+              accumulator.responseDays.reduce((sum, value) => sum + value, 0) /
+              accumulator.responseDays.length
+            ).toFixed(1)
+          )
+        : null,
+    lastInteractionAt: accumulator.lastInteractionAt,
+    confidenceLevel,
+    sampleSizeWarning: buildRecruiterCompanySampleSizeWarning(
+      confidenceLevel,
+      accumulator.attemptCount
+    ),
+    recommendedAction: "insufficient_data",
+  };
+
+  return {
+    ...base,
+    recommendedAction: determineRecruiterCompanyAction(base),
   };
 }
 
@@ -446,6 +649,83 @@ function buildCvPerformanceEntries(
   }
 
   return sortCvPerformanceEntries(Array.from(groups.values()).map(finalizeCvPerformanceEntry));
+}
+
+function buildRecruiterCompanyPerformanceEntries(
+  records: ApplicationOutcomeRecord[],
+  scope: RecruiterCompanyPerformanceScope,
+  buildGrouping: (record: ApplicationOutcomeRecord) => {
+    key: string;
+    label: string;
+    source: string | null;
+    company: string | null;
+    recruiterName: string | null;
+    agencyName: string | null;
+  }
+): RecruiterCompanyPerformanceEntry[] {
+  const groups = new Map<string, RecruiterCompanyPerformanceAccumulator>();
+
+  for (const record of records) {
+    const grouping = buildGrouping(record);
+    const existing = groups.get(grouping.key) || {
+      key: grouping.key,
+      label: grouping.label,
+      scope,
+      source: grouping.source,
+      company: grouping.company,
+      recruiterName: grouping.recruiterName,
+      agencyName: grouping.agencyName,
+      roleTrack: record.roleTrack || null,
+      attemptCount: 0,
+      pipelineOnlyCount: 0,
+      responseCount: 0,
+      interviewCount: 0,
+      rejectionCount: 0,
+      offerCount: 0,
+      ghostedCount: 0,
+      followUpDueCount: 0,
+      usefulRoles: 0,
+      responseDays: [],
+      lastInteractionAt: null,
+    } satisfies RecruiterCompanyPerformanceAccumulator;
+
+    if (existing.roleTrack && record.roleTrack && existing.roleTrack !== record.roleTrack) {
+      existing.roleTrack = null;
+    }
+
+    if (record.recordKind === "application_attempt") {
+      existing.attemptCount += 1;
+      if (record.responseReceived) existing.responseCount += 1;
+      if (record.interviewReceived) existing.interviewCount += 1;
+      if (record.rejectionReceived) existing.rejectionCount += 1;
+      if (record.offerReceived) existing.offerCount += 1;
+      if (record.ghosted) existing.ghostedCount += 1;
+      if (record.followUpDue) existing.followUpDueCount += 1;
+      if (typeof record.daysToResponse === "number") {
+        existing.responseDays.push(record.daysToResponse);
+      }
+    } else {
+      existing.pipelineOnlyCount += 1;
+    }
+
+    if (isUsefulOutcomeRecord(record)) {
+      existing.usefulRoles += 1;
+    }
+
+    const interactionAt = record.latestStatusDate || record.applicationDate;
+    if (
+      interactionAt &&
+      (!existing.lastInteractionAt || new Date(interactionAt) > new Date(existing.lastInteractionAt))
+    ) {
+      existing.lastInteractionAt = interactionAt;
+    }
+
+    groups.set(grouping.key, existing);
+  }
+
+  return sortRecruiterCompanyEntries(
+    Array.from(groups.values()).map(finalizeRecruiterCompanyPerformanceEntry)
+  );
 }
 
 function pickCvRecommendation(
@@ -549,6 +829,55 @@ function buildCvPerformanceSummary(records: ApplicationOutcomeRecord[]) {
       byTrack: byTrackRecommendations,
       bySource: bySourceRecommendations,
     },
+  };
+}
+
+function buildRecruiterCompanyPerformanceSummary(records: ApplicationOutcomeRecord[]) {
+  const companyPerformance = buildRecruiterCompanyPerformanceEntries(records, "company", (record) => ({
+    key: buildPerformanceKeyPart(record.company),
+    label: record.company || "unknown",
+    source: null,
+    company: record.company || "unknown",
+    recruiterName: null,
+    agencyName: null,
+  }));
+
+  const recruiterPerformance = buildRecruiterCompanyPerformanceEntries(records, "recruiter", (record) => ({
+    key: buildPerformanceKeyPart(record.recruiterName),
+    label: record.recruiterName || "unknown",
+    source: null,
+    company: null,
+    recruiterName: record.recruiterName || "unknown",
+    agencyName: null,
+  }));
+
+  const agencyPerformance = buildRecruiterCompanyPerformanceEntries(records, "agency", (record) => ({
+    key: buildPerformanceKeyPart(record.agencyName),
+    label: record.agencyName || "unknown",
+    source: null,
+    company: null,
+    recruiterName: null,
+    agencyName: record.agencyName || "unknown",
+  }));
+
+  const sourceCompanyPerformance = buildRecruiterCompanyPerformanceEntries(records, "source_company", (record) => {
+    const source = buildPerformanceKeyPart(record.source);
+    const company = buildPerformanceKeyPart(record.company);
+    return {
+      key: `${source}::${company}`,
+      label: `${getSourceLabel(source)} · ${company}`,
+      source,
+      company,
+      recruiterName: null,
+      agencyName: null,
+    };
+  });
+
+  return {
+    companyPerformance,
+    recruiterPerformance,
+    agencyPerformance,
+    sourceCompanyPerformance,
   };
 }
 
@@ -806,6 +1135,7 @@ function buildPipelineOnlyRecord(job: EnrichedJob): ApplicationOutcomeRecord {
 
 export function summariseApplicationOutcomes(records: ApplicationOutcomeRecord[]) {
   const sorted = sortRecords(records);
+  const recruiterCompanyPerformance = buildRecruiterCompanyPerformanceSummary(sorted);
   return {
     overall: summarizeOverall(sorted),
     byTrack: summarizeDimension(sorted, (record) => ({
@@ -832,6 +1162,10 @@ export function summariseApplicationOutcomes(records: ApplicationOutcomeRecord[]
     followUpDue: sorted.filter((record) => record.followUpDue),
     ghosted: sorted.filter((record) => record.ghosted),
     cvPerformance: buildCvPerformanceSummary(sorted),
+    companyPerformance: recruiterCompanyPerformance.companyPerformance,
+    recruiterPerformance: recruiterCompanyPerformance.recruiterPerformance,
+    agencyPerformance: recruiterCompanyPerformance.agencyPerformance,
+    sourceCompanyPerformance: recruiterCompanyPerformance.sourceCompanyPerformance,
   };
 }
 

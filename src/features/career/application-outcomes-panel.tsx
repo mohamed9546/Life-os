@@ -7,6 +7,7 @@ import {
   ApplicationOutcomeSnapshot,
   CvVersionPerformanceEntry,
   CvVersionRecommendation,
+  RecruiterCompanyPerformanceEntry,
 } from "@/types";
 
 type OutcomesResponse = {
@@ -144,6 +145,8 @@ export function ApplicationOutcomesPanel() {
 
           <CvPerformanceSection snapshot={snapshot} />
 
+          <RecruiterCompanyPerformanceSection snapshot={snapshot} />
+
           <div className="space-y-2">
             <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Recent attempt rows</p>
             {recentRecords.length > 0 ? (
@@ -275,6 +278,145 @@ export function CvPerformanceSection({ snapshot }: { snapshot: ApplicationOutcom
   );
 }
 
+export function RecruiterCompanyPerformanceSection({ snapshot }: { snapshot: ApplicationOutcomeSnapshot }) {
+  const companyPerformance = snapshot.summaries.companyPerformance || [];
+  const recruiterPerformance = snapshot.summaries.recruiterPerformance || [];
+  const agencyPerformance = snapshot.summaries.agencyPerformance || [];
+  const sourceCompanyPerformance = snapshot.summaries.sourceCompanyPerformance || [];
+
+  const respondingCompanies = companyPerformance.filter((entry) => entry.responseCount > 0).slice(0, 4);
+  const ghostingCompanies = companyPerformance.filter((entry) => entry.ghostedCount > 0).slice(0, 4);
+  const followUpCompanies = companyPerformance.filter((entry) => entry.followUpDueCount > 0).slice(0, 4);
+  const responsiveRecruiters = recruiterPerformance.filter((entry) => entry.key !== "unknown" && entry.responseCount > 0).slice(0, 4);
+  const responsiveAgencies = agencyPerformance.filter((entry) => entry.key !== "unknown" && entry.responseCount > 0).slice(0, 4);
+  const recruiterVisible = recruiterPerformance.some((entry) => entry.key !== "unknown");
+  const agencyVisible = agencyPerformance.some((entry) => entry.key !== "unknown");
+  const sourceCompanyTop = sourceCompanyPerformance.slice(0, 4);
+  const lowSampleCount = [
+    ...companyPerformance,
+    ...recruiterPerformance.filter((entry) => entry.key !== "unknown"),
+    ...agencyPerformance.filter((entry) => entry.key !== "unknown"),
+  ].filter((entry) => entry.confidenceLevel === "insufficient_sample").length;
+
+  const recentRelationshipRecords = (snapshot.records || [])
+    .filter((record) => record.recordKind === "application_attempt")
+    .filter((record) => record.company || record.recruiterName)
+    .slice(0, 5);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-3">
+        <SummaryCard
+          title="Responding companies"
+          label={`${respondingCompanies.length} visible signal${respondingCompanies.length === 1 ? "" : "s"}`}
+          meta={`${ghostingCompanies.length} ghosting companies · ${followUpCompanies.length} follow-up queues`}
+        />
+        <SummaryCard
+          title="Recruiter / agency signal"
+          label={`${responsiveRecruiters.length + responsiveAgencies.length} active contact lanes`}
+          meta={`${responsiveRecruiters.length} recruiters · ${responsiveAgencies.length} agencies`}
+        />
+        <SummaryCard
+          title="Low-sample warning"
+          label={`${lowSampleCount} slices`}
+          meta="Tiny recruiter/company samples are shown but not over-ranked."
+        />
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Best responding companies</p>
+        {respondingCompanies.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">No company has a recorded response signal yet.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {respondingCompanies.map((entry) => (
+              <PerformanceRow key={`company-${entry.key}`} entry={entry} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Ghosting and follow-up pressure</p>
+          {ghostingCompanies.length === 0 && followUpCompanies.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">No repeated ghosting or company follow-up pressure is visible yet.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {[...ghostingCompanies, ...followUpCompanies.filter((entry) => !ghostingCompanies.some((item) => item.key === entry.key))]
+                .slice(0, 4)
+                .map((entry) => (
+                  <PerformanceRow key={`pressure-${entry.key}`} entry={entry} />
+                ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Source-company combinations</p>
+          {sourceCompanyTop.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">No source/company evidence yet.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {sourceCompanyTop.map((entry) => (
+                <PerformanceRow key={`source-company-${entry.key}`} entry={entry} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {recruiterVisible ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Recruiter outcomes</p>
+          {responsiveRecruiters.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">Recruiter names exist, but there is not yet enough positive response signal to rank them confidently.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {responsiveRecruiters.map((entry) => (
+                <PerformanceRow key={`recruiter-${entry.key}`} entry={entry} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {agencyVisible ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Agency outcomes</p>
+          {responsiveAgencies.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">Agency names exist, but there is not yet enough positive response signal to rank them confidently.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {responsiveAgencies.map((entry) => (
+                <PerformanceRow key={`agency-${entry.key}`} entry={entry} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Recent company / recruiter outcomes</p>
+        {recentRelationshipRecords.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">No recent company or recruiter-linked attempts yet.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {recentRelationshipRecords.map((record) => (
+              <div key={`recent-${record.recordId}`} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                <p className="text-sm font-medium text-white">{record.company || "unknown"}{record.recruiterName ? ` · ${record.recruiterName}` : ""}</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {record.source} · {record.cvVersion} · {record.currentStatus}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function pickTrackLeaders(entries: CvVersionPerformanceEntry[]) {
   const byTrack = new Map<string, CvVersionPerformanceEntry[]>();
   for (const entry of entries) {
@@ -292,6 +434,39 @@ function pickTrackLeaders(entries: CvVersionPerformanceEntry[]) {
       })[0]
     )
     .filter((entry): entry is CvVersionPerformanceEntry => Boolean(entry));
+}
+
+function recommendedActionTone(action: RecruiterCompanyPerformanceEntry["recommendedAction"]) {
+  switch (action) {
+    case "prioritise_follow_up":
+      return "success" as const;
+    case "watch":
+      return "warning" as const;
+    case "avoid_for_now":
+      return "danger" as const;
+    default:
+      return "info" as const;
+  }
+}
+
+function PerformanceRow({ entry }: { entry: RecruiterCompanyPerformanceEntry }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-white">{entry.label}</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {entry.attemptCount} attempts · {entry.responseCount} responses · {entry.responseRate ?? 0}% response · {entry.interviewCount} interviews · {entry.interviewRate ?? 0}% interview
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          <Pill label={entry.recommendedAction.replace(/_/g, " ")} tone={recommendedActionTone(entry.recommendedAction)} />
+          <Pill label={entry.confidenceLevel.replace(/_/g, " ")} tone={entry.confidenceLevel === "stronger_signal" ? "success" : entry.confidenceLevel === "directional" ? "warning" : "danger"} />
+        </div>
+      </div>
+      {entry.sampleSizeWarning ? <p className="mt-2 text-xs text-amber-300">{entry.sampleSizeWarning}</p> : null}
+    </div>
+  );
 }
 
 function OutcomeStatCard({
